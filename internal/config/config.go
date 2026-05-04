@@ -3,11 +3,13 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
 	ListenAddr         string
+	BasePath           string
 	AdminToken         string
 	DataDir            string
 	AppVersion         string
@@ -24,6 +26,7 @@ type Config struct {
 func FromEnv() Config {
 	cfg := Config{
 		ListenAddr:         env("LISTEN_ADDR", ":8080"),
+		BasePath:           normalizeBasePath(env("BASE_PATH", "")),
 		AdminToken:         env("ADMIN_TOKEN", ""),
 		DataDir:            env("DATA_DIR", "/data"),
 		AppVersion:         env("APP_VERSION", ""),
@@ -49,6 +52,13 @@ func FromEnv() Config {
 	}
 	cfg.UpdateCheckJitter = time.Duration(jitterMinutes) * time.Minute
 	return cfg
+}
+
+func normalizeBasePath(path string) string {
+	if path == "" || path == "/" {
+		return ""
+	}
+	return "/" + strings.Trim(path, "/")
 }
 
 func env(key, fallback string) string {

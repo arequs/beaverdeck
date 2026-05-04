@@ -494,7 +494,13 @@ func requestBaseURL(r *http.Request) string {
 	if host == "" {
 		host = r.Host
 	}
-	return fmt.Sprintf("%s://%s", scheme, host)
+	prefix := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Prefix"), ",")[0])
+	if prefix != "" && prefix != "/" {
+		prefix = "/" + strings.Trim(prefix, "/")
+	} else {
+		prefix = ""
+	}
+	return fmt.Sprintf("%s://%s%s", scheme, host, prefix)
 }
 
 func oidcScopes(raw string) string {

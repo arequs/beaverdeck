@@ -1,3 +1,5 @@
+import { withBasePath } from './paths.js';
+
 export const AUTH_EXPIRED_EVENT = 'beaverdeck-auth-expired';
 
 async function readApiResponse(response) {
@@ -20,7 +22,7 @@ async function readApiResponse(response) {
 }
 
 export async function publicApi(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(withBasePath(path), options);
   return readApiResponse(response);
 }
 
@@ -31,7 +33,7 @@ export function createApi(token, username) {
       Authorization: `Bearer ${token}`,
       'X-BeaverDeck-Username': username
     };
-    const response = await fetch(path, { ...options, headers });
+    const response = await fetch(withBasePath(path), { ...options, headers });
     if (response.status === 401 && typeof window !== 'undefined') {
       let errorText = 'Session expired. Please sign in again.';
       try {

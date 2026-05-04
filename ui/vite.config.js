@@ -6,6 +6,7 @@ const uiDir = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(uiDir, '../cmd/server/web/dist');
 
 export default defineConfig({
+  base: './',
   publicDir: path.resolve(uiDir, 'public'),
   build: {
     outDir: distDir,

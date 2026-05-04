@@ -341,5 +341,11 @@ func (s *Server) redirectAuthResult(w http.ResponseWriter, r *http.Request, user
 		values.Set("auth_user", username)
 		values.Set("auth_session", token)
 	}
-	http.Redirect(w, r, "/#"+values.Encode(), http.StatusFound)
+	basePath := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Prefix"), ",")[0])
+	if basePath != "" && basePath != "/" {
+		basePath = "/" + strings.Trim(basePath, "/")
+	} else {
+		basePath = ""
+	}
+	http.Redirect(w, r, basePath+"/#"+values.Encode(), http.StatusFound)
 }

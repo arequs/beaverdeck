@@ -2,13 +2,13 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations panel
 type: application
-version: 2.0.3
-appVersion: "1.3.3"
+version: 2.0.4
+appVersion: "1.3.4"
 home: https://github.com/arequs/beaverdeck
 icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.png
 annotations:
   artifacthub.io/changes: |
-    - kind: changed
-      description: "Updated the default BeaverDeck image to 1.3.3."
     - kind: fixed
-      description: "Includes a security dependency update for github.com/moby/spdystream (CVE-2026-35469)."
+      description: "Fixed deployments served behind a non-root ingress path such as /beaverdeck."
+    - kind: changed
+      description: "Updated the default BeaverDeck image to 1.3.4."

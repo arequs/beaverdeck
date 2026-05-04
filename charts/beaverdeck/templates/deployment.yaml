@@ -43,6 +43,8 @@ spec:
           env:
             - name: LISTEN_ADDR
               value: {{ .Values.listenAddr | quote }}
+            - name: BASE_PATH
+              value: {{ ternary .Values.ingress.path "/" .Values.ingress.enabled | quote }}
             - name: DATA_DIR
               value: {{ .Values.dataDir | quote }}
             - name: APP_VERSION

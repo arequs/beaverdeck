@@ -72,6 +72,7 @@ import {
   summarizeApplyResult,
   terminalThemeFor
 } from './lib/appUtils.js';
+import { withBasePath } from './lib/paths.js';
 
 const ACTIVE_NAV_STORAGE_KEY = 'beaverdeck.activeNav';
 
@@ -1625,7 +1626,7 @@ export default function App() {
     if (container) {
       params.set('container', container);
     }
-    const wsURL = `${protocol}//${window.location.host}/api/pods/exec/ws?${params.toString()}`;
+    const wsURL = `${protocol}//${window.location.host}${withBasePath(`/api/pods/exec/ws?${params.toString()}`)}`;
     const ws = new WebSocket(wsURL);
     execSocketsRef.current[id] = ws;
 

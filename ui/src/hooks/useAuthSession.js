@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AUTH_EXPIRED_EVENT, createApi, publicApi } from '../lib/api.js';
 import { AUTH_STORAGE_KEY, NAMESPACE_STORAGE_KEY } from '../lib/appConstants.js';
 import { defaultRolePermissions, getStoredThemePreference, normalizeRolePermissions } from '../lib/appUtils.js';
+import { withBasePath } from '../lib/paths.js';
 
 const DEFAULT_AUTH_PROVIDERS = {
   appVersion: '',
@@ -200,11 +201,11 @@ export default function useAuthSession({
   }
 
   function startGoogleLogin() {
-    window.location.href = '/api/auth/google/start';
+    window.location.href = withBasePath('/api/auth/google/start');
   }
 
   function startOIDCLogin() {
-    window.location.href = '/api/auth/oidc/start';
+    window.location.href = withBasePath('/api/auth/oidc/start');
   }
 
   async function logout(options = {}) {

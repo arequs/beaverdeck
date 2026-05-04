@@ -55,6 +55,29 @@ func main() {
 	routes := srv.Routes()
 	secured := auth.Middleware(userStore)(routes)
 	mux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			routes.ServeHTTP(w, r)
+			return
+		}
+		if cfg.BasePath != "" {
+			if r.Header.Get("X-Forwarded-Prefix") == "" {
+				r.Header.Set("X-Forwarded-Prefix", cfg.BasePath)
+			}
+			if r.URL.Path == cfg.BasePath {
+				http.Redirect(w, r, cfg.BasePath+"/", http.StatusMovedPermanently)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, cfg.BasePath+"/") {
+				r = r.Clone(r.Context())
+				r.URL.Path = strings.TrimPrefix(r.URL.Path, cfg.BasePath)
+				if r.URL.RawPath != "" {
+					r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, cfg.BasePath)
+				}
+				if r.URL.Path == "" {
+					r.URL.Path = "/"
+				}
+			}
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/auth/") {
 			routes.ServeHTTP(w, r)
 			return
@@ -80,7 +103,7 @@ func main() {
 	updatecheck.Start(ctx, cfg, kc, userStore)
 
 	go func() {
-		log.Printf("beaverdeck listening on %s (managed namespace=%s allow_all=%v)", cfg.ListenAddr, cfg.ManagedNamespace, cfg.AllowAllNamespaces)
+		log.Printf("beaverdeck listening on %s (base_path=%s managed namespace=%s allow_all=%v)", cfg.ListenAddr, cfg.BasePath, cfg.ManagedNamespace, cfg.AllowAllNamespaces)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen failed: %v", err)
 		}

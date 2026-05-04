@@ -1,4 +1,5 @@
 import React from 'react';
+import { withBasePath } from '../lib/paths.js';
 import { GoogleIcon, OAuthIcon } from './AuthIcons.jsx';
 import PasswordField from './PasswordField.jsx';
 
@@ -22,7 +23,7 @@ export function LoginScreen({
       <div className="login-layout">
         <div className="login-card">
           <div className="login-brand-lockup">
-            <img className="login-logo" src="/logo.png" alt="" aria-hidden="true" />
+            <img className="login-logo" src={withBasePath('/logo.png')} alt="" aria-hidden="true" />
             <div className="login-brand-name">BeaverDeck</div>
           </div>
           {title ? <h1>{title}</h1> : null}
@@ -84,7 +85,7 @@ export function BootstrapSetupScreen({
     <div className="login-screen">
       <div className="login-card bootstrap-card">
         <div className="login-brand-lockup">
-          <img className="login-logo" src="/logo.png" alt="" aria-hidden="true" />
+          <img className="login-logo" src={withBasePath('/logo.png')} alt="" aria-hidden="true" />
           <div className="login-brand-name">BeaverDeck</div>
         </div>
         <h1>BeaverDeck Initialization</h1>
@@ -137,7 +138,7 @@ export function SidebarNav({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <img className="brand-logo brand-logo-large" src="/logo.png" alt="" aria-hidden="true" />
+        <img className="brand-logo brand-logo-large" src={withBasePath('/logo.png')} alt="" aria-hidden="true" />
         <div className="brand-copy">
           <div className="brand-title">BeaverDeck</div>
           <div className="brand-cluster">{clusterName || 'Current cluster'}</div>
