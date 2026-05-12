@@ -118,16 +118,21 @@ export function GoogleMappingsModal({
   );
 }
 
-export function OIDCConfigModal({ open, config, onClose, onChange, onTest, onSave }) {
+export function OIDCConfigModal({ open, config, mode = 'oidc', onClose, onChange, onTest, onSave }) {
   if (!open) return null;
+  const isEntra = mode === 'entra';
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card google-auth-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Configure {config.provider_name || 'Custom OAuth'}</h3>
+          <h3>Configure {isEntra ? 'Azure Entra ID' : (config.provider_name || 'OpenID Connect')}</h3>
           <button className="modal-close" type="button" aria-label="Close" onClick={onClose}>×</button>
         </div>
-        <p className="modal-muted">Configure a standard OpenID Connect provider using discovery.</p>
+        <p className="modal-muted">
+          {isEntra
+            ? 'Configure Azure Entra ID sign-in. BeaverDeck resolves group mappings from token group claims and Microsoft Graph when Graph scopes are granted.'
+            : 'Configure a standard OpenID Connect provider using discovery and map roles from the configured groups claim.'}
+        </p>
         <div className="settings-form">
           <label className="settings-form-row">
             <span className="settings-form-label">Provider Name</span>
@@ -135,7 +140,11 @@ export function OIDCConfigModal({ open, config, onClose, onChange, onTest, onSav
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Issuer URL</span>
-            <input value={config.issuer_url} onChange={(e) => onChange('issuer_url', e.target.value)} placeholder="issuer url" />
+            <input
+              value={config.issuer_url}
+              onChange={(e) => onChange('issuer_url', e.target.value)}
+              placeholder={isEntra ? 'https://login.microsoftonline.com/<tenant-id>/v2.0' : 'issuer url'}
+            />
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Client ID</span>
@@ -188,6 +197,7 @@ export function OIDCMappingsModal({
   onDelete
 }) {
   if (!open) return null;
+  const isEntra = /entra|azure/i.test(providerName || '');
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card google-auth-modal" onClick={(e) => e.stopPropagation()}>
@@ -195,9 +205,13 @@ export function OIDCMappingsModal({
           <h3>Configure {providerName} Group Mapping</h3>
           <button className="modal-close" type="button" aria-label="Close" onClick={onClose}>×</button>
         </div>
-        <p className="modal-muted">Map OIDC group claim values to BeaverDeck roles.</p>
+        <p className="modal-muted">
+          {isEntra
+            ? 'Map Azure Entra ID groups to BeaverDeck roles. Use the group object ID, display name, mail address, or security identifier returned by Microsoft Graph.'
+            : 'Map OIDC group claim values to BeaverDeck roles.'}
+        </p>
         <div className="toolbar fixed-toolbar mapping-form">
-          <input value={groupName} onChange={(e) => onGroupNameChange(e.target.value)} placeholder="group value" disabled={Boolean(editingGroupName)} />
+          <input value={groupName} onChange={(e) => onGroupNameChange(e.target.value)} placeholder={isEntra ? 'group object id or display name' : 'group claim value'} disabled={Boolean(editingGroupName)} />
           <select value={role} onChange={(e) => onRoleChange(e.target.value)}>
             {roles.map((item) => (
               <option key={item.name} value={item.name}>{item.name}</option>
@@ -231,7 +245,7 @@ export function OIDCMappingsModal({
               ))}
               {mappings.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="small-hint">No Custom OAuth group mappings configured.</td>
+                  <td colSpan="4" className="small-hint">No OIDC group mappings configured.</td>
                 </tr>
               ) : null}
             </tbody>

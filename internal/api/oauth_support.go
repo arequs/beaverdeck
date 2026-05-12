@@ -35,8 +35,9 @@ type googleGroupItem struct {
 	Email string `json:"email"`
 }
 
-type googleTokenResponse struct {
+type oauthTokenResponse struct {
 	AccessToken      string `json:"access_token"`
+	IDToken          string `json:"id_token"`
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
@@ -59,6 +60,18 @@ type oidcDiscoveryDocument struct {
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	UserInfoEndpoint      string `json:"userinfo_endpoint"`
+}
+
+type microsoftGraphGroupsResponse struct {
+	Value    []microsoftGraphGroup `json:"value"`
+	NextLink string                `json:"@odata.nextLink"`
+}
+
+type microsoftGraphGroup struct {
+	ID                 string `json:"id"`
+	DisplayName        string `json:"displayName"`
+	Mail               string `json:"mail"`
+	SecurityIdentifier string `json:"securityIdentifier"`
 }
 
 type googleMappingRequest struct {
@@ -131,7 +144,7 @@ func fetchGoogleUserInfo(ctx context.Context, accessToken string) (googleUserInf
 func fetchOIDCDiscovery(ctx context.Context, issuerURL string) (oidcDiscoveryDocument, error) {
 	issuerURL = strings.TrimRight(strings.TrimSpace(issuerURL), "/")
 	if issuerURL == "" {
-		return oidcDiscoveryDocument{}, fmt.Errorf("custom oauth issuer url is not configured")
+		return oidcDiscoveryDocument{}, fmt.Errorf("OpenID Connect issuer url is not configured")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuerURL+"/.well-known/openid-configuration", nil)
 	if err != nil {
@@ -158,17 +171,17 @@ func exchangeOAuthCode(ctx context.Context, tokenEndpoint, clientID, clientSecre
 	return strings.TrimSpace(tokenResp.AccessToken), nil
 }
 
-func executeOAuthCodeExchange(ctx context.Context, tokenEndpoint, clientID, clientSecret, redirectURI, code string) (googleTokenResponse, string, error) {
+func executeOAuthCodeExchange(ctx context.Context, tokenEndpoint, clientID, clientSecret, redirectURI, code string) (oauthTokenResponse, string, error) {
 	resp, rawBody, err := oauthTokenRequest(ctx, tokenEndpoint, clientID, clientSecret, redirectURI, code, true)
 	if err == nil {
 		return resp, rawBody, nil
 	}
 	if !isInvalidClientError(resp, rawBody) {
-		return googleTokenResponse{}, rawBody, fmt.Errorf("exchange oauth auth code: %w", err)
+		return oauthTokenResponse{}, rawBody, fmt.Errorf("exchange oauth auth code: %w", err)
 	}
 	resp, rawBody, err = oauthTokenRequest(ctx, tokenEndpoint, clientID, clientSecret, redirectURI, code, false)
 	if err != nil {
-		return googleTokenResponse{}, rawBody, fmt.Errorf("exchange oauth auth code: %w", err)
+		return oauthTokenResponse{}, rawBody, fmt.Errorf("exchange oauth auth code: %w", err)
 	}
 	return resp, rawBody, nil
 }
@@ -195,7 +208,7 @@ func probeOAuthClientCredentials(ctx context.Context, tokenEndpoint, clientID, c
 	return fmt.Errorf("token endpoint did not accept the configuration: %s", firstNonEmpty(strings.TrimSpace(resp.ErrorDescription), strings.TrimSpace(resp.Error), strings.TrimSpace(rawBody), err.Error()))
 }
 
-func oauthTokenRequest(ctx context.Context, tokenEndpoint, clientID, clientSecret, redirectURI, code string, useBasicAuth bool) (googleTokenResponse, string, error) {
+func oauthTokenRequest(ctx context.Context, tokenEndpoint, clientID, clientSecret, redirectURI, code string, useBasicAuth bool) (oauthTokenResponse, string, error) {
 	form := url.Values{}
 	form.Set("code", code)
 	form.Set("redirect_uri", redirectURI)
@@ -207,7 +220,7 @@ func oauthTokenRequest(ctx context.Context, tokenEndpoint, clientID, clientSecre
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return googleTokenResponse{}, "", err
+		return oauthTokenResponse{}, "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if useBasicAuth {
@@ -217,16 +230,16 @@ func oauthTokenRequest(ctx context.Context, tokenEndpoint, clientID, clientSecre
 	client := &http.Client{Timeout: 15 * time.Second}
 	httpResp, err := client.Do(req)
 	if err != nil {
-		return googleTokenResponse{}, "", err
+		return oauthTokenResponse{}, "", err
 	}
 	defer httpResp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
 	if err != nil {
-		return googleTokenResponse{}, "", err
+		return oauthTokenResponse{}, "", err
 	}
 	rawBody := strings.TrimSpace(string(body))
-	var tokenResp googleTokenResponse
+	var tokenResp oauthTokenResponse
 	_ = json.Unmarshal(body, &tokenResp)
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return tokenResp, rawBody, fmt.Errorf("%s", firstNonEmpty(strings.TrimSpace(tokenResp.ErrorDescription), strings.TrimSpace(tokenResp.Error), rawBody, httpResp.Status))
@@ -234,12 +247,12 @@ func oauthTokenRequest(ctx context.Context, tokenEndpoint, clientID, clientSecre
 	return tokenResp, rawBody, nil
 }
 
-func isInvalidClientError(resp googleTokenResponse, raw string) bool {
+func isInvalidClientError(resp oauthTokenResponse, raw string) bool {
 	value := strings.ToLower(firstNonEmpty(resp.Error, resp.ErrorDescription, raw))
 	return strings.Contains(value, "invalid_client") || strings.Contains(value, "client authentication failed")
 }
 
-func isAcceptedProbeError(resp googleTokenResponse, raw string) bool {
+func isAcceptedProbeError(resp oauthTokenResponse, raw string) bool {
 	value := strings.ToLower(firstNonEmpty(resp.Error, resp.ErrorDescription, raw))
 	if value == "" {
 		return false
@@ -270,9 +283,64 @@ func fetchOIDCUserInfo(ctx context.Context, userInfoEndpoint, accessToken string
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
 	var payload map[string]any
 	if err := doJSON(req, &payload); err != nil {
-		return nil, fmt.Errorf("fetch custom oauth user profile: %w", err)
+		return nil, fmt.Errorf("fetch OpenID Connect user profile: %w", err)
 	}
 	return payload, nil
+}
+
+func fetchMicrosoftGraphGroups(ctx context.Context, accessToken string) ([]string, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("microsoft graph access token is empty")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	nextURL := "https://graph.microsoft.com/v1.0/me/transitiveMemberOf?$select=id,displayName,mail,securityIdentifier&$top=999"
+	groups := make([]string, 0)
+	seen := map[string]struct{}{}
+
+	for page := 0; nextURL != "" && page < 20; page++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("fetch microsoft graph groups: %w", err)
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read microsoft graph groups response: %w", readErr)
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("fetch microsoft graph groups: %s", strings.TrimSpace(string(body)))
+		}
+
+		var payload microsoftGraphGroupsResponse
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil, fmt.Errorf("decode microsoft graph groups response: %w", err)
+		}
+		for _, item := range payload.Value {
+			for _, value := range []string{item.ID, item.DisplayName, item.Mail, item.SecurityIdentifier} {
+				group := strings.TrimSpace(value)
+				if group == "" {
+					continue
+				}
+				key := strings.ToLower(group)
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				groups = append(groups, group)
+			}
+		}
+		nextURL = strings.TrimSpace(payload.NextLink)
+	}
+	return groups, nil
 }
 
 func extractStringClaim(payload map[string]any, configured, fallback string) (string, error) {
@@ -340,6 +408,34 @@ func extractStringListClaim(payload map[string]any, configured, fallback string)
 		configured = fallback
 	}
 	return nil, fmt.Errorf("required groups claim is missing: %s", strings.TrimSpace(configured))
+}
+
+func appendUniqueStrings(base []string, extra []string) []string {
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, values := range [][]string{base, extra} {
+		for _, value := range values {
+			trimmed := strings.TrimSpace(value)
+			if trimmed == "" {
+				continue
+			}
+			key := strings.ToLower(trimmed)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func isMicrosoftEntraConfig(cfg users.OIDCConfig) bool {
+	value := strings.ToLower(strings.TrimSpace(cfg.ProviderName) + " " + strings.TrimSpace(cfg.IssuerURL))
+	return strings.Contains(value, "entra") ||
+		strings.Contains(value, "azure") ||
+		strings.Contains(value, "microsoftonline.com") ||
+		strings.Contains(value, "sts.windows.net")
 }
 
 func fetchGoogleGroups(ctx context.Context, cfg users.GoogleConfig, email string) ([]string, error) {

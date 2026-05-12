@@ -1,4 +1,5 @@
 import React from 'react';
+import { X } from 'lucide-react';
 import ActionMenu from './ActionMenu.jsx';
 import LogViewer from './LogViewer.jsx';
 import YamlViewer from './YamlViewer.jsx';
@@ -61,7 +62,9 @@ export default function BottomDock({
               >
                 {tab.title}
               </button>
-              <button className="dock-tab-close" onClick={() => closeTab(tab.id)} title={`Close ${tab.title}`} aria-label={`Close ${tab.title}`}>x</button>
+              <button className="dock-tab-close" onClick={() => closeTab(tab.id)} title={`Close ${tab.title}`} aria-label={`Close ${tab.title}`}>
+                <X size={13} strokeWidth={1.8} aria-hidden="true" />
+              </button>
             </div>
           ))}
         </div>

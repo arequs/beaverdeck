@@ -42,7 +42,7 @@ Recommendation: enable persistence from the start to keep your custom configurat
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
-  --version 2.0.4 \
+  --version 2.1.0 \
   --set persistence.enabled=true \
   --set persistence.size=1Gi \
   --set persistence.storageClass=standard \
@@ -95,7 +95,7 @@ ingress:
 | `fullnameOverride` | `""` | Full override for generated resource names. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `image.repository` | `arequs/beaverdeck` | Container image repository. |
-| `image.tag` | `1.3.4` | Container image tag. |
+| `image.tag` | `1.4.0` | Container image tag. |
 | `ingress.annotations` | `{}` | Ingress annotations. |
 | `ingress.className` | `""` | Ingress class name. |
 | `ingress.enabled` | `false` | Render a single Ingress resource for BeaverDeck. |

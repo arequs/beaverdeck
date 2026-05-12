@@ -58,7 +58,7 @@ BeaverDeck can run without persistence, but that mode is best treated as tempora
 
 ## Build Requirements
 
-- Go 1.26 or newer
+- Go 1.26.3 or newer
 - Node.js 22 or newer for frontend builds
 
 ## Repository Layout

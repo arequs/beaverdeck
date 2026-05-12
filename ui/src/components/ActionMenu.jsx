@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { LockKeyhole, MoreHorizontal } from 'lucide-react';
 
 export default function ActionMenu({ actions = [] }) {
   const normalized = actions.filter((action) => action && action.label);
@@ -66,8 +67,9 @@ export default function ActionMenu({ actions = [] }) {
         onClick={() => hasEnabled && setOpen((value) => !value)}
         title={hasEnabled ? 'Actions' : (disabledReasons.join('\n') || 'No actions available')}
         disabled={!hasEnabled}
+        aria-label="Actions"
       >
-        ⋯
+        <MoreHorizontal size={15} strokeWidth={1.8} aria-hidden="true" />
       </button>
       {open ? createPortal(
         <div className="action-menu-popover" ref={popoverRef} style={popoverStyle}>
@@ -78,8 +80,8 @@ export default function ActionMenu({ actions = [] }) {
               disabled={!action.enabled}
               title={action.enabled ? action.label : action.reason}
             >
-              {action.label}
-              {!action.enabled ? '  🔒' : ''}
+              <span>{action.label}</span>
+              {!action.enabled ? <LockKeyhole size={13} strokeWidth={1.8} aria-hidden="true" /> : null}
             </button>
           ))}
         </div>,

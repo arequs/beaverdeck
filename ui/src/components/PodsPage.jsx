@@ -1,24 +1,9 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { Logs, SquareTerminal } from 'lucide-react';
 import ActionMenu from './ActionMenu.jsx';
 
 function podRefKey(namespace, name) {
   return `${String(namespace || '').trim()}/${String(name || '').trim()}`;
-}
-
-function LogsIcon() {
-  return (
-    <svg className="pod-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M3 3.5h10M3 8h10M3 12.5h6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ExecIcon() {
-  return (
-    <svg className="pod-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M4 4.5 7.5 8 4 11.5M9.5 11.5H12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 export default function PodsPage({
@@ -228,7 +213,7 @@ export default function PodsPage({
                         title={allAllowed(selectionDisabledCheck, logsPermission).allowed ? 'Logs' : allAllowed(selectionDisabledCheck, logsPermission).reason}
                         onClick={() => safe(() => openPodLogsTab(p.namespace, p.name))}
                       >
-                        <LogsIcon />
+                        <Logs className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -238,7 +223,7 @@ export default function PodsPage({
                         title={allAllowed(selectionDisabledCheck, execPermission).allowed ? 'Exec' : allAllowed(selectionDisabledCheck, execPermission).reason}
                         onClick={() => safe(() => openPodExecTab(p.namespace, p.name))}
                       >
-                        <ExecIcon />
+                        <SquareTerminal className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
                       </button>
                       <ActionMenu
                         actions={[

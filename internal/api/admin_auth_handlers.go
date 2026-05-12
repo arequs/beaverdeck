@@ -175,7 +175,7 @@ func (s *Server) adminOIDCConfigTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.IssuerURL) == "" || strings.TrimSpace(req.ClientID) == "" || strings.TrimSpace(req.ClientSecret) == "" {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("custom oauth issuer/client id/client secret are not configured"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("OpenID Connect issuer/client id/client secret are not configured"))
 		return
 	}
 
@@ -188,17 +188,18 @@ func (s *Server) adminOIDCConfigTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := probeOAuthClientCredentials(ctx, discovery.TokenEndpoint, req.ClientID, req.ClientSecret, oidcRedirectURI(r)); err != nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("custom oauth client validation failed: %w", err))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("OpenID Connect client validation failed: %w", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
-		"provider_name": providerLabel(req.ProviderName, "Custom OAuth"),
+		"provider_name": providerLabel(req.ProviderName, "OpenID Connect"),
 		"issuer_url":    strings.TrimSpace(req.IssuerURL),
 		"redirect_uri":  oidcRedirectURI(r),
 		"scopes":        oidcScopes(req.Scopes),
 		"userinfo_url":  discovery.UserInfoEndpoint,
-		"message":       fmt.Sprintf("Custom OAuth config is valid. Discovery succeeded for %s, token endpoint accepted the client credentials, and redirect URI is %s.", strings.TrimSpace(req.IssuerURL), oidcRedirectURI(r)),
+		"entra_graph":   isMicrosoftEntraConfig(req),
+		"message":       fmt.Sprintf("%s config is valid. Discovery succeeded for %s, token endpoint accepted the client credentials, and redirect URI is %s.", providerLabel(req.ProviderName, "OpenID Connect"), strings.TrimSpace(req.IssuerURL), oidcRedirectURI(r)),
 	})
 }
 

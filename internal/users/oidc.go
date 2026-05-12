@@ -32,7 +32,7 @@ func (s *Store) UpdateOIDCConfig(ctx context.Context, cfg OIDCConfig) error {
 	}
 	providerName := strings.TrimSpace(cfg.ProviderName)
 	if providerName == "" {
-		providerName = "Custom OAuth"
+		providerName = "OpenID Connect"
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE oidc_config
@@ -82,7 +82,7 @@ func (s *Store) ListOIDCGroupRoles(ctx context.Context) ([]OIDCGroupRole, error)
 func (s *Store) UpsertOIDCGroupRole(ctx context.Context, groupName string, role Role) error {
 	groupName = strings.TrimSpace(groupName)
 	if groupName == "" {
-		return fmt.Errorf("custom oauth group is required")
+		return fmt.Errorf("OpenID Connect group is required")
 	}
 	if !s.roleExists(ctx, string(role)) {
 		return fmt.Errorf("role does not exist: %s", role)
@@ -99,7 +99,7 @@ func (s *Store) UpsertOIDCGroupRole(ctx context.Context, groupName string, role 
 func (s *Store) DeleteOIDCGroupRole(ctx context.Context, groupName string) error {
 	groupName = strings.TrimSpace(groupName)
 	if groupName == "" {
-		return fmt.Errorf("custom oauth group is required")
+		return fmt.Errorf("OpenID Connect group is required")
 	}
 	res, err := s.db.ExecContext(ctx, `DELETE FROM oidc_group_roles WHERE group_name = ?`, groupName)
 	if err != nil {
@@ -136,13 +136,13 @@ func (s *Store) ResetOIDCAuth(ctx context.Context) error {
 func (s *Store) ResolveOIDCRole(ctx context.Context, groups []string) (Role, string, error) {
 	normalized := make(map[string]struct{}, len(groups))
 	for _, group := range groups {
-		group = strings.TrimSpace(group)
+		group = strings.ToLower(strings.TrimSpace(group))
 		if group != "" {
 			normalized[group] = struct{}{}
 		}
 	}
 	if len(normalized) == 0 {
-		return "", "", fmt.Errorf("custom oauth user is not a member of any mapped group")
+		return "", "", fmt.Errorf("OpenID Connect user is not a member of any mapped group")
 	}
 
 	rows, err := s.db.QueryContext(ctx,
@@ -168,7 +168,7 @@ func (s *Store) ResolveOIDCRole(ctx context.Context, groups []string) (Role, str
 		if err := rows.Scan(&groupName, &role, &mode); err != nil {
 			return "", "", err
 		}
-		if _, ok := normalized[groupName]; !ok {
+		if _, ok := normalized[strings.ToLower(strings.TrimSpace(groupName))]; !ok {
 			continue
 		}
 		return role, groupName, nil
@@ -176,5 +176,5 @@ func (s *Store) ResolveOIDCRole(ctx context.Context, groups []string) (Role, str
 	if err := rows.Err(); err != nil {
 		return "", "", err
 	}
-	return "", "", fmt.Errorf("custom oauth user is not a member of any mapped group")
+	return "", "", fmt.Errorf("OpenID Connect user is not a member of any mapped group")
 }

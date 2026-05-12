@@ -45,7 +45,7 @@ func (s *Server) authProviders(w http.ResponseWriter, r *http.Request) {
 				strings.TrimSpace(oidcCfg.IssuerURL) != "" &&
 				strings.TrimSpace(oidcCfg.ClientID) != "" &&
 				strings.TrimSpace(oidcCfg.ClientSecret) != "",
-			"provider_name": providerLabel(oidcCfg.ProviderName, "Custom OAuth"),
+			"provider_name": providerLabel(oidcCfg.ProviderName, "OpenID Connect"),
 			"hosted_domain": oidcCfg.HostedDomain,
 		},
 	})
@@ -237,7 +237,7 @@ func (s *Server) authOIDCStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(cfg.IssuerURL) == "" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("custom oauth is not configured"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("OpenID Connect is not configured"))
 		return
 	}
 
@@ -285,9 +285,14 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
-	accessToken, err := exchangeOAuthCode(ctx, discovery.TokenEndpoint, cfg.ClientID, cfg.ClientSecret, oidcRedirectURI(r), code)
+	tokenResp, _, err := executeOAuthCodeExchange(ctx, discovery.TokenEndpoint, cfg.ClientID, cfg.ClientSecret, oidcRedirectURI(r), code)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
+		return
+	}
+	accessToken := strings.TrimSpace(tokenResp.AccessToken)
+	if accessToken == "" {
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("oauth token response did not include an access token"))
 		return
 	}
 	userInfo, err := fetchOIDCUserInfo(ctx, discovery.UserInfoEndpoint, accessToken)
@@ -307,13 +312,27 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	email = strings.TrimSpace(strings.ToLower(email))
 	if hosted := strings.TrimSpace(strings.ToLower(cfg.HostedDomain)); hosted != "" && !strings.HasSuffix(email, "@"+hosted) {
-		s.redirectAuthResult(w, r, "", "", fmt.Errorf("custom oauth account %s is outside the allowed hosted domain", email))
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect account %s is outside the allowed hosted domain", email))
 		return
 	}
 
-	groups, err := extractStringListClaim(userInfo, cfg.GroupsClaim, "groups")
-	if err != nil {
-		s.redirectAuthResult(w, r, "", "", err)
+	groups, groupsErr := extractStringListClaim(userInfo, cfg.GroupsClaim, "groups")
+	if isMicrosoftEntraConfig(cfg) {
+		graphGroups, err := fetchMicrosoftGraphGroups(ctx, accessToken)
+		if err != nil && groupsErr != nil {
+			s.redirectAuthResult(w, r, "", "", fmt.Errorf("%v; microsoft graph group lookup also failed: %w", groupsErr, err))
+			return
+		}
+		if err == nil {
+			groups = appendUniqueStrings(groups, graphGroups)
+		}
+	}
+	if len(groups) == 0 {
+		if groupsErr != nil {
+			s.redirectAuthResult(w, r, "", "", groupsErr)
+			return
+		}
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect user is not a member of any groups"))
 		return
 	}
 	role, _, err := s.users.ResolveOIDCRole(ctx, groups)

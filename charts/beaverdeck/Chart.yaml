@@ -2,13 +2,17 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations panel
 type: application
-version: 2.0.4
-appVersion: "1.3.4"
+version: 2.1.0
+appVersion: "1.4.0"
 home: https://github.com/arequs/beaverdeck
 icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.png
 annotations:
   artifacthub.io/changes: |
-    - kind: fixed
-      description: "Fixed deployments served behind a non-root ingress path such as /beaverdeck."
     - kind: changed
-      description: "Updated the default BeaverDeck image to 1.3.4."
+      description: "Redesigned the BeaverDeck UI with a lighter, faster, square-edged interface."
+    - kind: added
+      description: "Added Azure Entra ID sign-in support with Microsoft Graph group-to-role mapping."
+    - kind: changed
+      description: "Updated backend dependencies including Kubernetes client-go, OAuth2, and SQLite."
+    - kind: changed
+      description: "Updated the default BeaverDeck image to 1.4.0."

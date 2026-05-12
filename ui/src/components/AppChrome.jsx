@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { Boxes, Check, RefreshCw, UserRound } from 'lucide-react';
 import { withBasePath } from '../lib/paths.js';
 import { GoogleIcon, OAuthIcon } from './AuthIcons.jsx';
 import PasswordField from './PasswordField.jsx';
@@ -57,7 +58,7 @@ export function LoginScreen({
               {authProviders.oidc?.enabled ? (
                 <button className="secondary google-login-button" onClick={startOIDCLogin}>
                   <span className="oauth-icon-wrap"><OAuthIcon /></span>
-                  Sign in with {authProviders.oidc?.provider_name || 'Custom OAuth'}{authProviders.oidc?.hosted_domain ? ` (${authProviders.oidc.hosted_domain})` : ''}
+                  Sign in with {authProviders.oidc?.provider_name || 'OpenID Connect'}{authProviders.oidc?.hosted_domain ? ` (${authProviders.oidc.hosted_domain})` : ''}
                 </button>
               ) : null}
               {authError ? <div className="error-text">{authError}</div> : null}
@@ -125,8 +126,6 @@ export function BootstrapSetupScreen({
 
 export function SidebarNav({
   activeNav,
-  setNsPickerOpen,
-  nsPickerOpen,
   clusterName,
   selectedNamespaces,
   namespaces,
@@ -135,6 +134,16 @@ export function SidebarNav({
   visibleMenu,
   handleNavChange
 }) {
+  const allNamespacesRef = useRef(null);
+  const allNamespacesSelected = namespaces.length > 0 && selectedNamespaces.length === namespaces.length;
+  const someNamespacesSelected = selectedNamespaces.length > 0 && !allNamespacesSelected;
+
+  useEffect(() => {
+    if (allNamespacesRef.current) {
+      allNamespacesRef.current.indeterminate = someNamespacesSelected;
+    }
+  }, [someNamespacesSelected]);
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -146,30 +155,32 @@ export function SidebarNav({
       </div>
 
       <div className="cluster-card">
-        <div className="small-label">Namespaces</div>
-        <button className="ns-picker-btn" onClick={() => setNsPickerOpen((v) => !v)}>
-          {selectedNamespaces.length ? `${selectedNamespaces.length} selected` : 'Select namespaces'}
-        </button>
-        {nsPickerOpen && (
-          <div className="ns-picker-popover">
-            <div className="ns-picker-actions">
-              <button onClick={() => setSelectedNamespaces(namespaces)}>All</button>
-              <button onClick={() => setSelectedNamespaces([])}>None</button>
-            </div>
-            <div className="ns-picker-list">
-              {namespaces.map((ns) => (
-                <label key={ns} className="ns-picker-item">
-                  <input type="checkbox" checked={selectedNamespaces.includes(ns)} onChange={() => toggleNamespace(ns)} />
-                  <span>{ns}</span>
-                </label>
-              ))}
-            </div>
+        <div className="cluster-card-head">
+          <div className="small-label">Namespaces</div>
+        </div>
+        <div className="ns-picker-popover ns-picker-inline">
+          <label className="namespace-select-all">
+            <input
+              ref={allNamespacesRef}
+              type="checkbox"
+              checked={allNamespacesSelected}
+              onChange={(event) => setSelectedNamespaces(event.target.checked ? namespaces : [])}
+              aria-label={allNamespacesSelected ? 'Unselect all namespaces' : 'Select all namespaces'}
+            />
+            <span>Select all</span>
+          </label>
+          <div className="ns-picker-list">
+            {namespaces.map((ns) => (
+              <label key={ns} className="ns-picker-item">
+                <input type="checkbox" checked={selectedNamespaces.includes(ns)} onChange={() => toggleNamespace(ns)} />
+                <span>{ns}</span>
+              </label>
+            ))}
           </div>
-        )}
-        <div className="small-hint">{selectedNamespaces.join(', ') || 'Nothing selected'}</div>
+        </div>
       </div>
 
-      <div className="nav-section-title">Menu</div>
+      <div className="nav-section-title">Navigation</div>
       {visibleMenu.map((group) => (
         <div key={group.section} className="menu-group">
           <div className="menu-group-title">{group.section}</div>
@@ -191,11 +202,20 @@ export function SidebarNav({
 export function WorkspaceHeader({ title, status, onRefresh, onProfile }) {
   return (
     <header className="topbar">
-      <strong>{title}</strong>
+      <div className="topbar-title">
+        <Boxes size={18} strokeWidth={1.8} aria-hidden="true" />
+        <strong>{title}</strong>
+      </div>
       <div className="top-actions">
-        {status ? <span className="status-text">{status}</span> : null}
-        <button onClick={onRefresh}>Refresh</button>
-        <button onClick={onProfile}>Profile</button>
+        {status ? <span className="status-text">{status}</span> : <span className="status-text status-idle"><Check size={13} strokeWidth={2} aria-hidden="true" />Idle</span>}
+        <button className="icon-text-button" onClick={onRefresh}>
+          <RefreshCw size={15} strokeWidth={1.8} aria-hidden="true" />
+          <span>Refresh</span>
+        </button>
+        <button className="icon-text-button" onClick={onProfile}>
+          <UserRound size={15} strokeWidth={1.8} aria-hidden="true" />
+          <span>Profile</span>
+        </button>
       </div>
     </header>
   );

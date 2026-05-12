@@ -475,7 +475,7 @@ func (s *Store) DeleteRole(ctx context.Context, name string) error {
 		return err
 	}
 	if inUse > 0 {
-		return fmt.Errorf("role is assigned to custom oauth group mappings")
+		return fmt.Errorf("role is assigned to OpenID Connect group mappings")
 	}
 
 	res, err := s.db.ExecContext(ctx, `DELETE FROM roles WHERE name = ?`, name)

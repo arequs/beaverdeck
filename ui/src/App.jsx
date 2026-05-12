@@ -109,7 +109,6 @@ export default function App() {
 
   const [namespaces, setNamespaces] = useState([]);
   const [selectedNamespaces, setSelectedNamespaces] = useState([]);
-  const [nsPickerOpen, setNsPickerOpen] = useState(false);
 
   const [workloads, setWorkloads] = useState([]);
   const [pods, setPods] = useState([]);
@@ -147,7 +146,7 @@ export default function App() {
   });
   const [googleMappings, setGoogleMappings] = useState([]);
   const [oidcConfig, setOIDCConfig] = useState({
-    provider_name: 'Custom OAuth',
+    provider_name: 'OpenID Connect',
     issuer_url: '',
     client_id: '',
     client_secret: '',
@@ -171,6 +170,7 @@ export default function App() {
   const [showGoogleConfigModal, setShowGoogleConfigModal] = useState(false);
   const [showGoogleMappingsModal, setShowGoogleMappingsModal] = useState(false);
   const [showOIDCConfigModal, setShowOIDCConfigModal] = useState(false);
+  const [oidcConfigModalMode, setOIDCConfigModalMode] = useState('oidc');
   const [showOIDCMappingsModal, setShowOIDCMappingsModal] = useState(false);
   const [editingRoleName, setEditingRoleName] = useState('');
   const [roleFormName, setRoleFormName] = useState('');
@@ -316,7 +316,7 @@ export default function App() {
       });
       setGoogleMappings([]);
       setOIDCConfig({
-        provider_name: 'Custom OAuth',
+        provider_name: 'OpenID Connect',
         issuer_url: '',
         client_id: '',
         client_secret: '',
@@ -957,7 +957,6 @@ export default function App() {
 
   function handleNavChange(nextNav) {
     if (!nextNav || nextNav === activeNav) return;
-    setNsPickerOpen(false);
     setWarningPopover(null);
     if (warningHideTimerRef.current) {
       clearTimeout(warningHideTimerRef.current);
@@ -1794,7 +1793,7 @@ export default function App() {
     });
     setGoogleMappings(googleMappingsData.items || []);
     setOIDCConfig({
-      provider_name: oidcConfigData.provider_name || 'Custom OAuth',
+      provider_name: oidcConfigData.provider_name || 'OpenID Connect',
       issuer_url: oidcConfigData.issuer_url || '',
       client_id: oidcConfigData.client_id || '',
       client_secret: oidcConfigData.client_secret || '',
@@ -1932,17 +1931,38 @@ export default function App() {
     await refreshUsers();
   }
 
+  function applyEntraOIDCDefaults() {
+    setOIDCConfig((prev) => ({
+      ...prev,
+      provider_name: 'Azure Entra ID',
+      scopes: 'openid email profile User.Read GroupMember.Read.All',
+      email_claim: 'email',
+      groups_claim: 'groups'
+    }));
+  }
+
+  function openOIDCConfigModal() {
+    setOIDCConfigModalMode('oidc');
+    setShowOIDCConfigModal(true);
+  }
+
+  function openEntraConfigModal() {
+    applyEntraOIDCDefaults();
+    setOIDCConfigModalMode('entra');
+    setShowOIDCConfigModal(true);
+  }
+
   async function testOIDCConfig() {
     const data = await api('/api/admin/oidc/config/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(oidcConfig)
     });
-    showBottomNoticeMessage('success', data.message || 'Custom OAuth config test passed');
+    showBottomNoticeMessage('success', data.message || 'OpenID Connect config test passed');
   }
 
   async function disableOIDCAuth() {
-    if (!window.confirm('Disable Custom OAuth and remove all Custom OAuth group mappings?')) {
+    if (!window.confirm('Disable OpenID Connect and remove all OpenID Connect group mappings?')) {
       return;
     }
     await api('/api/admin/oidc/reset', { method: 'POST' });
@@ -1951,7 +1971,7 @@ export default function App() {
     resetOIDCMappingForm();
     await reloadAuthProviders();
     await refreshUsers();
-    showBottomNoticeMessage('success', 'Custom OAuth has been disabled');
+    showBottomNoticeMessage('success', 'OpenID Connect has been disabled');
   }
 
   async function saveGoogleMapping() {
@@ -1994,7 +2014,7 @@ export default function App() {
 
   async function saveOIDCMapping() {
     const groupName = editingOIDCGroupName || newOIDCGroupName.trim();
-    if (!groupName) throw new Error('custom oauth group is required');
+    if (!groupName) throw new Error('OpenID Connect group is required');
     await api('/api/admin/oidc/mappings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2351,8 +2371,6 @@ export default function App() {
     <div className="app-shell">
       <SidebarNav
         activeNav={activeNav}
-        setNsPickerOpen={setNsPickerOpen}
-        nsPickerOpen={nsPickerOpen}
         clusterName={currentUser.clusterName}
         selectedNamespaces={selectedNamespaces}
         namespaces={namespaces}
@@ -2723,7 +2741,8 @@ export default function App() {
               oidcAuthConfigured={oidcAuthConfigured}
               oidcConfig={oidcConfig}
               oidcMappings={oidcMappings}
-              setShowOIDCConfigModal={setShowOIDCConfigModal}
+              openOIDCConfigModal={openOIDCConfigModal}
+              openEntraConfigModal={openEntraConfigModal}
               setShowOIDCMappingsModal={setShowOIDCMappingsModal}
               disableOIDCAuth={disableOIDCAuth}
               safe={safe}
@@ -2837,6 +2856,7 @@ export default function App() {
       <OIDCConfigModal
         open={showOIDCConfigModal}
         config={oidcConfig}
+        mode={oidcConfigModalMode}
         onClose={() => setShowOIDCConfigModal(false)}
         onChange={(field, value) => setOIDCConfig((prev) => ({ ...prev, [field]: value }))}
         onTest={() => safe(testOIDCConfig)}
@@ -2846,7 +2866,7 @@ export default function App() {
       <OIDCMappingsModal
         open={showOIDCMappingsModal}
         onClose={() => setShowOIDCMappingsModal(false)}
-        providerName={oidcConfig.provider_name || 'Custom OAuth'}
+        providerName={oidcConfig.provider_name || 'OpenID Connect'}
         mappings={oidcMappings}
         groupName={newOIDCGroupName}
         role={newOIDCRole}

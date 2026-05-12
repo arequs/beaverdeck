@@ -8,7 +8,7 @@ const DEFAULT_AUTH_PROVIDERS = {
   appVersion: '',
   local: true,
   google: { enabled: false, hosted_domain: '' },
-  oidc: { enabled: false, provider_name: 'Custom OAuth', hosted_domain: '' }
+  oidc: { enabled: false, provider_name: 'OpenID Connect', hosted_domain: '' }
 };
 
 const DEFAULT_BOOTSTRAP_STATE = {
@@ -104,7 +104,7 @@ export default function useAuthSession({
         },
         oidc: {
           enabled: Boolean(data.oidc?.enabled),
-          provider_name: data.oidc?.provider_name || 'Custom OAuth',
+          provider_name: data.oidc?.provider_name || 'OpenID Connect',
           hosted_domain: data.oidc?.hosted_domain || ''
         }
       });

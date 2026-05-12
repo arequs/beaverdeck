@@ -21,12 +21,15 @@ export default function UserManagementPage({
   oidcAuthConfigured,
   oidcConfig,
   oidcMappings,
-  setShowOIDCConfigModal,
+  openOIDCConfigModal,
+  openEntraConfigModal,
   setShowOIDCMappingsModal,
   disableOIDCAuth,
   safe
 }) {
-  const providerName = oidcConfig.provider_name || 'Custom OAuth';
+  const providerName = oidcConfig.provider_name || 'OpenID Connect';
+  const isEntraConfigured = /entra|azure|microsoftonline\.com|sts\.windows\.net/i.test(`${oidcConfig.provider_name || ''} ${oidcConfig.issuer_url || ''}`);
+  const genericOIDCConfigured = oidcAuthConfigured && !isEntraConfigured;
 
   return (
     <div className="admin-sections">
@@ -192,41 +195,41 @@ export default function UserManagementPage({
       <section className="admin-section admin-section-prominent">
         <div className="admin-section-header">
           <div>
-            <div className="small-label">Custom OAuth</div>
-            <div className="admin-section-description">Configure an OpenID Connect provider and map external groups to BeaverDeck roles.</div>
+            <div className="small-label">OpenID Connect</div>
+            <div className="admin-section-description">Configure a generic OpenID Connect provider and map external group claims to BeaverDeck roles.</div>
           </div>
         </div>
         <div className="cluster-card google-auth-panel">
           <div className="google-auth-status-row">
             <div>
               <div className="small-label">Status</div>
-              <div className={`google-auth-badge ${oidcAuthConfigured ? 'configured' : 'disabled'}`}>
-                {oidcAuthConfigured ? 'Configured' : 'Not configured'}
+              <div className={`google-auth-badge ${genericOIDCConfigured ? 'configured' : 'disabled'}`}>
+                {genericOIDCConfigured ? 'Configured' : 'Not configured'}
               </div>
             </div>
             <div>
               <div className="small-label">Issuer</div>
-              <div>{oidcConfig.issuer_url || '-'}</div>
+              <div>{genericOIDCConfigured ? (oidcConfig.issuer_url || '-') : '-'}</div>
             </div>
             <div>
               <div className="small-label">Hosted Domain</div>
-              <div>{oidcConfig.hosted_domain || '-'}</div>
+              <div>{genericOIDCConfigured ? (oidcConfig.hosted_domain || '-') : '-'}</div>
             </div>
             <div>
               <div className="small-label">Group Mappings</div>
-              <div>{oidcMappings.length}</div>
+              <div>{genericOIDCConfigured ? oidcMappings.length : 0}</div>
             </div>
           </div>
           <div className="toolbar fixed-toolbar">
-            <button onClick={() => setShowOIDCConfigModal(true)}>Configure</button>
+            <button onClick={openOIDCConfigModal}>Configure</button>
             <button className="secondary" onClick={() => setShowOIDCMappingsModal(true)}>Configure Group Mapping</button>
             <button className="danger" onClick={() => safe(disableOIDCAuth)}>Disable</button>
           </div>
         </div>
         <div className="small-hint">
-          Custom OAuth uses standard OpenID Connect discovery and group mapping via the configured groups claim.
+          Generic OIDC uses discovery and group mapping via the configured groups claim.
         </div>
-        <div className="small-label">{providerName} Group Mapping</div>
+        <div className="small-label">OIDC Group Mapping</div>
         <div className="table-wrap admin-table-wrap">
           <table>
             <thead>
@@ -237,16 +240,81 @@ export default function UserManagementPage({
               </tr>
             </thead>
             <tbody>
-              {oidcMappings.map((item) => (
+              {genericOIDCConfigured ? oidcMappings.map((item) => (
                 <tr key={item.group_name}>
                   <td>{item.group_name}</td>
                   <td>{item.role}</td>
                   <td>{item.created_at || '-'}</td>
                 </tr>
-              ))}
-              {oidcMappings.length === 0 ? (
+              )) : null}
+              {!genericOIDCConfigured || oidcMappings.length === 0 ? (
                 <tr>
-                  <td colSpan="3" className="small-hint">No Custom OAuth group mappings configured.</td>
+                  <td colSpan="3" className="small-hint">No OIDC group mappings configured.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="admin-section admin-section-prominent">
+        <div className="admin-section-header">
+          <div>
+            <div className="small-label">Azure Entra ID</div>
+            <div className="admin-section-description">Configure Microsoft Entra sign-in and resolve role mappings from Entra groups.</div>
+          </div>
+        </div>
+        <div className="cluster-card google-auth-panel">
+          <div className="google-auth-status-row">
+            <div>
+              <div className="small-label">Status</div>
+              <div className={`google-auth-badge ${oidcAuthConfigured && isEntraConfigured ? 'configured' : 'disabled'}`}>
+                {oidcAuthConfigured && isEntraConfigured ? 'Configured' : 'Not configured'}
+              </div>
+            </div>
+            <div>
+              <div className="small-label">Issuer</div>
+              <div>{isEntraConfigured ? (oidcConfig.issuer_url || '-') : '-'}</div>
+            </div>
+            <div>
+              <div className="small-label">Graph Lookup</div>
+              <div>{isEntraConfigured && /GroupMember\.Read\.All/i.test(oidcConfig.scopes || '') ? 'enabled' : 'scope required'}</div>
+            </div>
+            <div>
+              <div className="small-label">Group Mappings</div>
+              <div>{isEntraConfigured ? oidcMappings.length : 0}</div>
+            </div>
+          </div>
+          <div className="toolbar fixed-toolbar">
+            <button onClick={openEntraConfigModal}>Configure Entra ID</button>
+            <button className="secondary" onClick={() => setShowOIDCMappingsModal(true)}>Configure Group Mapping</button>
+            <button className="danger" onClick={() => safe(disableOIDCAuth)}>Disable</button>
+          </div>
+        </div>
+        <div className="small-hint">
+          Entra ID uses standard OIDC login plus Microsoft Graph group lookup when scopes include User.Read and GroupMember.Read.All.
+        </div>
+        <div className="small-label">{isEntraConfigured ? providerName : 'Azure Entra ID'} Group Mapping</div>
+        <div className="table-wrap admin-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Role</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isEntraConfigured ? oidcMappings.map((item) => (
+                <tr key={item.group_name}>
+                  <td>{item.group_name}</td>
+                  <td>{item.role}</td>
+                  <td>{item.created_at || '-'}</td>
+                </tr>
+              )) : null}
+              {!isEntraConfigured || oidcMappings.length === 0 ? (
+                <tr>
+                  <td colSpan="3" className="small-hint">No Azure Entra ID group mappings configured.</td>
                 </tr>
               ) : null}
             </tbody>
