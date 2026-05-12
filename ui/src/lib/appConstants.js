@@ -42,7 +42,10 @@ export const MENU = [
   {
     section: 'Audit',
     items: [
-      { id: 'insights', label: 'Insights' },
+      { id: 'insights-nodes', label: 'Node Insights' },
+      { id: 'insights-workloads', label: 'Workload Insights' },
+      { id: 'insights-networking', label: 'Network Insights' },
+      { id: 'insights-storage', label: 'Storage Insights' },
       { id: 'cluster-health', label: 'Cluster Health' },
       { id: 'audit', label: 'Audit' }
     ]
@@ -60,10 +63,18 @@ export const AUTH_STORAGE_KEY = 'beaverdeck-auth';
 export const NAMESPACE_STORAGE_KEY = 'beaverdeck-selected-namespaces';
 export const THEME_STORAGE_PREFIX = 'beaverdeck-theme:';
 export const THEME_OPTIONS = [
-  { value: 'auto', label: 'Auto (System)' },
+  { value: 'auto', label: 'System' },
   { value: 'dark', label: 'Dark' },
   { value: 'light', label: 'Light' }
 ];
+
+export const INSIGHT_NAV_CATEGORIES = {
+  insights: { value: 'nodes', label: 'Nodes' },
+  'insights-nodes': { value: 'nodes', label: 'Nodes' },
+  'insights-workloads': { value: 'workloads', label: 'Workloads' },
+  'insights-networking': { value: 'networking', label: 'Networking' },
+  'insights-storage': { value: 'storage', label: 'Storage' }
+};
 
 export const SORT_DEFAULTS = {
   pods: { key: 'name', dir: 'asc' },
@@ -86,7 +97,7 @@ export const SORT_DEFAULTS = {
 
 export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply', 'audit', 'users', 'roles'];
 export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'crds', 'pvs', 'storageclasses']);
-export const BOTTOM_DOCK_HIDDEN_NAVS = new Set(['insights', 'cluster-health', 'audit', 'user-management', 'apply']);
+export const BOTTOM_DOCK_HIDDEN_NAVS = new Set(['insights', 'insights-nodes', 'insights-workloads', 'insights-networking', 'insights-storage', 'cluster-health', 'audit', 'user-management', 'apply']);
 export const DOCK_TOP_RATIO_DEFAULT = 0.62;
 export const DOCK_TOP_RATIO_MIN = 0.3;
 export const DOCK_TOP_RATIO_MAX = 0.8;
@@ -97,6 +108,10 @@ export const NAV_RESOURCE = {
   nodes: 'nodes',
   events: 'events',
   insights: 'insights',
+  'insights-nodes': 'insights',
+  'insights-workloads': 'insights',
+  'insights-networking': 'insights',
+  'insights-storage': 'insights',
   services: 'services',
   clusterroles: 'clusterroles',
   rbacroles: 'rbacroles',

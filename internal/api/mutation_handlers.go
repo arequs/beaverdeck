@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"beaverdeck/internal/audit"
+	"beaverdeck/internal/kube"
 	"github.com/gorilla/websocket"
 )
 
@@ -47,6 +48,12 @@ type applyRequest struct {
 	FieldManager string `json:"fieldManager"`
 }
 
+type execWSMessage struct {
+	Type string `json:"type"`
+	Cols uint16 `json:"cols,omitempty"`
+	Rows uint16 `json:"rows,omitempty"`
+}
+
 func (s *Server) execWS(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePermission(w, r, "exec", "edit") {
 		return
@@ -79,26 +86,40 @@ func (s *Server) execWS(w http.ResponseWriter, r *http.Request) {
 	defer stdinReader.Close()
 	defer stdinWriter.Close()
 	wsWriter := &websocketWriter{conn: conn}
+	resizeQueue := kube.NewTerminalResizeQueue()
+	defer resizeQueue.Close()
 
 	go func() {
 		defer stdinWriter.Close()
 		for {
-			_, msg, err := conn.ReadMessage()
+			msgType, msg, err := conn.ReadMessage()
 			if err != nil {
 				return
 			}
 			if len(msg) == 0 {
 				continue
 			}
-			_, _ = stdinWriter.Write(msg)
+			if msgType == websocket.BinaryMessage {
+				var wsMsg execWSMessage
+				if err := json.Unmarshal(msg, &wsMsg); err == nil {
+					if wsMsg.Type == "resize" {
+						resizeQueue.Push(wsMsg.Cols, wsMsg.Rows)
+						continue
+					}
+				}
+				continue
+			}
+			if len(msg) > 0 {
+				_, _ = stdinWriter.Write(msg)
+			}
 		}
 	}()
 
 	var execErr error
 	if useDefaultShell {
-		execErr = s.kube.ExecDefaultShell(r.Context(), ns, pod, container, stdinReader, wsWriter, wsWriter)
+		execErr = s.kube.ExecDefaultShellWithSizeQueue(r.Context(), ns, pod, container, stdinReader, wsWriter, wsWriter, resizeQueue)
 	} else {
-		execErr = s.kube.Exec(r.Context(), ns, pod, container, commands, stdinReader, wsWriter, wsWriter)
+		execErr = s.kube.ExecWithSizeQueue(r.Context(), ns, pod, container, commands, stdinReader, wsWriter, wsWriter, resizeQueue)
 	}
 	if execErr != nil {
 		msg := strings.TrimSpace(execErr.Error())

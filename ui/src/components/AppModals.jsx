@@ -125,7 +125,7 @@ export function OIDCConfigModal({ open, config, mode = 'oidc', onClose, onChange
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card google-auth-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Configure {isEntra ? 'Azure Entra ID' : (config.provider_name || 'OpenID Connect')}</h3>
+          <h3>{isEntra ? 'Configure Azure Entra ID' : 'Configure OpenID Connect'}</h3>
           <button className="modal-close" type="button" aria-label="Close" onClick={onClose}>×</button>
         </div>
         <p className="modal-muted">
@@ -136,7 +136,11 @@ export function OIDCConfigModal({ open, config, mode = 'oidc', onClose, onChange
         <div className="settings-form">
           <label className="settings-form-row">
             <span className="settings-form-label">Provider Name</span>
-            <input value={config.provider_name} onChange={(e) => onChange('provider_name', e.target.value)} placeholder="provider name" />
+            <input
+              value={config.provider_name}
+              onChange={(e) => onChange('provider_name', e.target.value)}
+              placeholder={isEntra ? 'Azure Entra ID' : 'OpenID Connect'}
+            />
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Issuer URL</span>
@@ -156,7 +160,11 @@ export function OIDCConfigModal({ open, config, mode = 'oidc', onClose, onChange
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Scopes</span>
-            <input value={config.scopes} onChange={(e) => onChange('scopes', e.target.value)} placeholder="scopes" />
+            <input
+              value={config.scopes}
+              onChange={(e) => onChange('scopes', e.target.value)}
+              placeholder={isEntra ? 'openid email profile User.Read GroupMember.Read.All' : 'openid email profile groups'}
+            />
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Hosted Domain</span>
@@ -164,11 +172,11 @@ export function OIDCConfigModal({ open, config, mode = 'oidc', onClose, onChange
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Email Claim</span>
-            <input value={config.email_claim} onChange={(e) => onChange('email_claim', e.target.value)} placeholder="email claim" />
+            <input value={config.email_claim} onChange={(e) => onChange('email_claim', e.target.value)} placeholder={isEntra ? 'email' : 'email claim'} />
           </label>
           <label className="settings-form-row">
             <span className="settings-form-label">Groups Claim</span>
-            <input value={config.groups_claim} onChange={(e) => onChange('groups_claim', e.target.value)} placeholder="groups claim" />
+            <input value={config.groups_claim} onChange={(e) => onChange('groups_claim', e.target.value)} placeholder={isEntra ? 'groups' : 'groups claim'} />
           </label>
         </div>
         <div className="modal-actions">
@@ -496,11 +504,20 @@ export function ProfileModal({ open, onClose, currentUser, selectedNamespaces, t
           </div>
           <div>
             <div className="small-label">Theme</div>
-            <select value={themePreference} onChange={(e) => onThemeChange(e.target.value)}>
+            <div className="theme-choice" role="radiogroup" aria-label="Theme">
               {themeOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+                <button
+                  key={option.value}
+                  type="button"
+                  className={themePreference === option.value ? 'active' : ''}
+                  onClick={() => onThemeChange(option.value)}
+                  role="radio"
+                  aria-checked={themePreference === option.value}
+                >
+                  {option.label}
+                </button>
               ))}
-            </select>
+            </div>
             <div className="small-hint modal-hint">Active theme: {resolvedTheme === 'dark' ? 'Dark' : 'Light'}</div>
           </div>
         </div>

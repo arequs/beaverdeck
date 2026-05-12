@@ -46,6 +46,7 @@ import {
   DOCK_TOP_RATIO_DEFAULT,
   DOCK_TOP_RATIO_MAX,
   DOCK_TOP_RATIO_MIN,
+  INSIGHT_NAV_CATEGORIES,
   MENU,
   NAV_RESOURCE,
   ROLE_RESOURCES,
@@ -75,11 +76,49 @@ import {
 import { withBasePath } from './lib/paths.js';
 
 const ACTIVE_NAV_STORAGE_KEY = 'beaverdeck.activeNav';
+const DEFAULT_OIDC_CONFIG = {
+  provider_name: 'OpenID Connect',
+  issuer_url: '',
+  client_id: '',
+  client_secret: '',
+  scopes: 'openid email profile groups',
+  hosted_domain: '',
+  email_claim: 'email',
+  groups_claim: 'groups'
+};
+
+const DEFAULT_ENTRA_CONFIG = {
+  provider_name: 'Azure Entra ID',
+  issuer_url: '',
+  client_id: '',
+  client_secret: '',
+  scopes: 'openid email profile User.Read GroupMember.Read.All',
+  hosted_domain: '',
+  email_claim: 'email',
+  groups_claim: 'groups'
+};
+
+function isEntraOIDCConfig(config) {
+  return /entra|azure|microsoftonline\.com|sts\.windows\.net/i.test(`${config?.provider_name || ''} ${config?.issuer_url || ''}`);
+}
+
+function normalizeOIDCConfig(config, fallback = DEFAULT_OIDC_CONFIG) {
+  return {
+    provider_name: config?.provider_name || fallback.provider_name,
+    issuer_url: config?.issuer_url || '',
+    client_id: config?.client_id || '',
+    client_secret: config?.client_secret || '',
+    scopes: config?.scopes || fallback.scopes,
+    hosted_domain: config?.hosted_domain || '',
+    email_claim: config?.email_claim || fallback.email_claim,
+    groups_claim: config?.groups_claim || fallback.groups_claim
+  };
+}
 
 function loadPersistedActiveNav() {
   try {
     const value = window.localStorage.getItem(ACTIVE_NAV_STORAGE_KEY);
-    return value || 'pods';
+    return value === 'insights' ? 'insights-nodes' : (value || 'pods');
   } catch {
     return 'pods';
   }
@@ -155,6 +194,7 @@ export default function App() {
     email_claim: 'email',
     groups_claim: 'groups'
   });
+  const [oidcConfigDraft, setOIDCConfigDraft] = useState(DEFAULT_OIDC_CONFIG);
   const [oidcMappings, setOIDCMappings] = useState([]);
   const [newGoogleGroupEmail, setNewGoogleGroupEmail] = useState('');
   const [newGoogleRole, setNewGoogleRole] = useState('viewer');
@@ -316,15 +356,9 @@ export default function App() {
       });
       setGoogleMappings([]);
       setOIDCConfig({
-        provider_name: 'OpenID Connect',
-        issuer_url: '',
-        client_id: '',
-        client_secret: '',
-        scopes: 'openid email profile groups',
-        hosted_domain: '',
-        email_claim: 'email',
-        groups_claim: 'groups'
+        ...DEFAULT_OIDC_CONFIG
       });
+      setOIDCConfigDraft({ ...DEFAULT_OIDC_CONFIG });
       setOIDCMappings([]);
       setShowGoogleConfigModal(false);
       setShowGoogleMappingsModal(false);
@@ -387,6 +421,9 @@ export default function App() {
   const visibleNavItems = useMemo(() => visibleMenu.flatMap((group) => group.items), [visibleMenu]);
 
   const activeBottomTab = useMemo(() => bottomTabs.find((t) => t.id === activeBottomTabId), [bottomTabs, activeBottomTabId]);
+  const activeInsightCategory = INSIGHT_NAV_CATEGORIES[activeNav]?.value || 'nodes';
+  const activeInsightCategoryLabel = INSIGHT_NAV_CATEGORIES[activeNav]?.label || 'Nodes';
+  const isInsightsView = Boolean(INSIGHT_NAV_CATEGORIES[activeNav]);
   const showInitialNavLoader = initialNavLoading === activeNav && !loadedNavs[activeNav];
   const hasBottomDock = bottomTabs.length > 0;
   const showBottomDock = hasBottomDock && !BOTTOM_DOCK_HIDDEN_NAVS.has(activeNav);
@@ -587,14 +624,18 @@ export default function App() {
       convertEol: false,
       disableStdin: !activeBottomTab.connected,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-      fontSize: 14,
+      fontSize: 13,
       theme: terminalThemeFor(resolvedTheme)
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     execTerminalHostRef.current.innerHTML = '';
     term.open(execTerminalHostRef.current);
-    fitAddon.fit();
+    const fitAndResize = () => {
+      fitAddon.fit();
+      sendExecResize(activeBottomTab.id, term.cols, term.rows);
+    };
+    fitAndResize();
     term.write(activeBottomTab.content || '');
     term.focus();
 
@@ -605,7 +646,16 @@ export default function App() {
       }
       sendExecData(activeBottomTab.id, data);
     });
-    const resizeHandler = () => fitAddon.fit();
+    const termResizeDisposable = term.onResize(({ cols, rows }) => {
+      sendExecResize(activeBottomTab.id, cols, rows);
+    });
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => fitAndResize())
+      : null;
+    if (resizeObserver) {
+      resizeObserver.observe(execTerminalHostRef.current);
+    }
+    const resizeHandler = () => fitAndResize();
     window.addEventListener('resize', resizeHandler);
 
     execTerminalRef.current = {
@@ -614,6 +664,8 @@ export default function App() {
       fitAddon,
       dispose: () => {
         dataDisposable.dispose();
+        termResizeDisposable.dispose();
+        resizeObserver?.disconnect();
         window.removeEventListener('resize', resizeHandler);
         term.dispose();
       }
@@ -640,7 +692,11 @@ export default function App() {
       return undefined;
     }
     const rafId = window.requestAnimationFrame(() => {
-      execTerminalRef.current?.fitAddon?.fit();
+      const terminal = execTerminalRef.current;
+      terminal?.fitAddon?.fit();
+      if (terminal?.term && terminal?.tabId) {
+        sendExecResize(terminal.tabId, terminal.term.cols, terminal.term.rows);
+      }
     });
     return () => window.cancelAnimationFrame(rafId);
   }, [activeBottomTab?.id, activeBottomTab?.type, dockSplitRatio, showBottomDock]);
@@ -930,6 +986,16 @@ export default function App() {
     }
   }
 
+  async function safeBottomNotice(action) {
+    try {
+      setStatus('');
+      await action();
+    } catch (err) {
+      setStatus('');
+      showBottomNoticeMessage('error', err.message || String(err));
+    }
+  }
+
   function toggleSort(nav, key) {
     setSortByNav((prev) => {
       const current = prev[nav] || SORT_DEFAULTS[nav] || { key: 'name', dir: 'asc' };
@@ -1083,7 +1149,19 @@ export default function App() {
         setAudit(auditData.items || []);
       },
       insights: async () => {
-        await refreshInsights();
+        await refreshInsights('nodes');
+      },
+      'insights-nodes': async () => {
+        await refreshInsights('nodes');
+      },
+      'insights-workloads': async () => {
+        await refreshInsights('workloads');
+      },
+      'insights-networking': async () => {
+        await refreshInsights('networking');
+      },
+      'insights-storage': async () => {
+        await refreshInsights('storage');
       },
       'user-management': async () => {
         if (!isAdmin) return;
@@ -1150,14 +1228,17 @@ export default function App() {
     setPods(podData.items || []);
   }
 
-  async function refreshInsights() {
+  async function refreshInsights(category = activeInsightCategory) {
     if (!api) return;
     const insightNamespaces = namespaces.length > 0 ? namespaces : selectedNamespaces;
     if (insightNamespaces.length === 0) {
       setInsights([]);
       return;
     }
-    const params = new URLSearchParams({ namespace: insightNamespaces.join(',') });
+    const params = new URLSearchParams({
+      namespace: insightNamespaces.join(','),
+      category
+    });
     const data = await api(`/api/insights?${params.toString()}`);
     setInsights(data.items || []);
   }
@@ -1632,6 +1713,9 @@ export default function App() {
     ws.onopen = () => {
       if (execSocketsRef.current[id] !== ws) return;
       upsertTab({ id, connected: true, error: '' }, false);
+      if (execTerminalRef.current?.tabId === id) {
+        sendExecResize(id, execTerminalRef.current.term.cols, execTerminalRef.current.term.rows);
+      }
     };
     ws.onmessage = (event) => {
       if (execSocketsRef.current[id] !== ws) return;
@@ -1655,6 +1739,17 @@ export default function App() {
       return;
     }
     ws.send(data);
+  }
+
+  function sendExecResize(tabId, cols, rows) {
+    const ws = execSocketsRef.current[tabId];
+    const safeCols = Math.max(2, Math.floor(Number(cols) || 0));
+    const safeRows = Math.max(1, Math.floor(Number(rows) || 0));
+    if (!ws || ws.readyState !== WebSocket.OPEN || safeCols <= 0 || safeRows <= 0) {
+      return;
+    }
+    const payload = JSON.stringify({ type: 'resize', cols: safeCols, rows: safeRows });
+    ws.send(new TextEncoder().encode(payload));
   }
 
   async function scaleWorkload() {
@@ -1792,16 +1887,7 @@ export default function App() {
       delegated_admin_email: googleConfigData.delegated_admin_email || ''
     });
     setGoogleMappings(googleMappingsData.items || []);
-    setOIDCConfig({
-      provider_name: oidcConfigData.provider_name || 'OpenID Connect',
-      issuer_url: oidcConfigData.issuer_url || '',
-      client_id: oidcConfigData.client_id || '',
-      client_secret: oidcConfigData.client_secret || '',
-      scopes: oidcConfigData.scopes || 'openid email profile groups',
-      hosted_domain: oidcConfigData.hosted_domain || '',
-      email_claim: oidcConfigData.email_claim || 'email',
-      groups_claim: oidcConfigData.groups_claim || 'groups'
-    });
+    setOIDCConfig(normalizeOIDCConfig(oidcConfigData));
     setOIDCMappings(oidcMappingsData.items || []);
     if (roles.length > 0 && !roles.find((r) => r.name === newUserRole)) {
       setNewUserRole(roles[0].name);
@@ -1922,41 +2008,35 @@ export default function App() {
   }
 
   async function saveOIDCConfig() {
+    const nextConfig = normalizeOIDCConfig(oidcConfigDraft, oidcConfigModalMode === 'entra' ? DEFAULT_ENTRA_CONFIG : DEFAULT_OIDC_CONFIG);
     await api('/api/admin/oidc/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(oidcConfig)
+      body: JSON.stringify(nextConfig)
     });
+    setOIDCConfig(nextConfig);
     await reloadAuthProviders();
     await refreshUsers();
   }
 
-  function applyEntraOIDCDefaults() {
-    setOIDCConfig((prev) => ({
-      ...prev,
-      provider_name: 'Azure Entra ID',
-      scopes: 'openid email profile User.Read GroupMember.Read.All',
-      email_claim: 'email',
-      groups_claim: 'groups'
-    }));
-  }
-
   function openOIDCConfigModal() {
+    setOIDCConfigDraft(normalizeOIDCConfig(isEntraOIDCConfig(oidcConfig) ? DEFAULT_OIDC_CONFIG : oidcConfig, DEFAULT_OIDC_CONFIG));
     setOIDCConfigModalMode('oidc');
     setShowOIDCConfigModal(true);
   }
 
   function openEntraConfigModal() {
-    applyEntraOIDCDefaults();
+    setOIDCConfigDraft(normalizeOIDCConfig(isEntraOIDCConfig(oidcConfig) ? oidcConfig : DEFAULT_ENTRA_CONFIG, DEFAULT_ENTRA_CONFIG));
     setOIDCConfigModalMode('entra');
     setShowOIDCConfigModal(true);
   }
 
   async function testOIDCConfig() {
+    const testConfig = normalizeOIDCConfig(oidcConfigDraft, oidcConfigModalMode === 'entra' ? DEFAULT_ENTRA_CONFIG : DEFAULT_OIDC_CONFIG);
     const data = await api('/api/admin/oidc/config/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(oidcConfig)
+      body: JSON.stringify(testConfig)
     });
     showBottomNoticeMessage('success', data.message || 'OpenID Connect config test passed');
   }
@@ -2271,9 +2351,55 @@ export default function App() {
     }
   }
 
+  function navForResourceKind(kind) {
+    switch (String(kind || '').toLowerCase()) {
+      case 'pod':
+        return 'pods';
+      case 'node':
+        return 'nodes';
+      case 'deployment':
+      case 'statefulset':
+      case 'daemonset':
+      case 'replicaset':
+      case 'job':
+      case 'cronjob':
+        return 'workloads';
+      case 'service':
+        return 'services';
+      case 'ingress':
+        return 'ingresses';
+      case 'configmap':
+        return 'configmaps';
+      case 'secret':
+        return 'secrets';
+      case 'persistentvolumeclaim':
+      case 'pvc':
+        return 'pvcs';
+      case 'persistentvolume':
+      case 'pv':
+        return 'pvs';
+      case 'storageclass':
+        return 'storageclasses';
+      case 'customresourcedefinition':
+      case 'crd':
+        return 'crds';
+      case 'clusterrole':
+      case 'clusterrolebinding':
+        return 'clusterroles';
+      case 'role':
+      case 'rolebinding':
+        return 'rbacroles';
+      case 'serviceaccount':
+        return 'serviceaccounts';
+      default:
+        return 'pods';
+    }
+  }
+
   function openInsightResource(alert) {
     if (!alert?.resource_kind || !alert?.resource_name) return;
     const kind = String(alert.resource_kind).toLowerCase();
+    setActiveNav(navForResourceKind(kind));
     if (kind === 'pod') {
       safe(() => openManifestTab(alert.namespace || primaryNamespace, 'pod', alert.resource_name));
       return;
@@ -2289,10 +2415,12 @@ export default function App() {
     if (!alert?.resource_kind || !alert?.resource_name) return;
     const kind = String(alert.resource_kind).toLowerCase();
     if (kind === 'pod') {
+      setActiveNav('pods');
       safe(() => openPodLogsTab(alert.namespace || primaryNamespace, alert.resource_name));
       return;
     }
     if (['deployment', 'statefulset', 'daemonset'].includes(kind)) {
+      setActiveNav('workloads');
       safe(() => openWorkloadLogsTab(alert.namespace || primaryNamespace, alert.resource_kind, alert.resource_name));
     }
   }
@@ -2497,8 +2625,9 @@ export default function App() {
 
           {activeNav === 'events' && <EventsPage sortedEvents={sortedEvents} />}
 
-          {activeNav === 'insights' && (
+          {isInsightsView && (
             <InsightsPage
+              categoryLabel={activeInsightCategoryLabel}
               showAllInsightChecks={showAllInsightChecks}
               setShowAllInsightChecks={setShowAllInsightChecks}
               showSuppressedInsights={showSuppressedInsights}
@@ -2833,7 +2962,7 @@ export default function App() {
         config={googleConfig}
         onClose={() => setShowGoogleConfigModal(false)}
         onChange={(field, value) => setGoogleConfig((prev) => ({ ...prev, [field]: value }))}
-        onTest={() => safe(testGoogleConfig)}
+        onTest={() => safeBottomNotice(testGoogleConfig)}
         onSave={() => safe(async () => { await saveGoogleConfig(); setShowGoogleConfigModal(false); })}
       />
 
@@ -2855,11 +2984,11 @@ export default function App() {
 
       <OIDCConfigModal
         open={showOIDCConfigModal}
-        config={oidcConfig}
+        config={oidcConfigDraft}
         mode={oidcConfigModalMode}
         onClose={() => setShowOIDCConfigModal(false)}
-        onChange={(field, value) => setOIDCConfig((prev) => ({ ...prev, [field]: value }))}
-        onTest={() => safe(testOIDCConfig)}
+        onChange={(field, value) => setOIDCConfigDraft((prev) => ({ ...prev, [field]: value }))}
+        onTest={() => safeBottomNotice(testOIDCConfig)}
         onSave={() => safe(async () => { await saveOIDCConfig(); setShowOIDCConfigModal(false); })}
       />
 

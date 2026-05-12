@@ -1,6 +1,7 @@
 import React from 'react';
 
 export default function InsightsPage({
+  categoryLabel,
   showAllInsightChecks,
   setShowAllInsightChecks,
   showSuppressedInsights,
@@ -22,6 +23,10 @@ export default function InsightsPage({
   return (
     <>
       <div className="toolbar fixed-toolbar">
+        <div className="insight-category-label">
+          <span className="small-label">Audit Insights</span>
+          <strong>{categoryLabel}</strong>
+        </div>
         <label className="toggle-row">
           <input
             type="checkbox"

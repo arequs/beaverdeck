@@ -221,7 +221,8 @@ func (s *Server) insights(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
 		return
 	}
-	items, err := s.kube.BuildInsights(r.Context(), nsList)
+	category := strings.TrimSpace(r.URL.Query().Get("category"))
+	items, err := s.kube.BuildInsights(r.Context(), nsList, category)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -260,7 +261,8 @@ func (s *Server) insights(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": out,
+		"category": category,
+		"items":    out,
 		"summary": map[string]any{
 			"total":      len(items),
 			"alerts":     alertCount,

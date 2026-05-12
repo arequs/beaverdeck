@@ -240,10 +240,14 @@ func isOwnedBy(refs []metav1.OwnerReference, kind, name string) bool {
 }
 
 func (c *Client) Exec(ctx context.Context, ns, pod, container string, command []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	return c.execWithTTY(ctx, ns, pod, container, command, stdin, stdout, stderr, true)
+	return c.ExecWithSizeQueue(ctx, ns, pod, container, command, stdin, stdout, stderr, nil)
 }
 
-func (c *Client) execWithTTY(ctx context.Context, ns, pod, container string, command []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
+func (c *Client) ExecWithSizeQueue(ctx context.Context, ns, pod, container string, command []string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue remotecommand.TerminalSizeQueue) error {
+	return c.execWithTTY(ctx, ns, pod, container, command, stdin, stdout, stderr, true, sizeQueue)
+}
+
+func (c *Client) execWithTTY(ctx context.Context, ns, pod, container string, command []string, stdin io.Reader, stdout, stderr io.Writer, tty bool, sizeQueue remotecommand.TerminalSizeQueue) error {
 	req := c.core.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(pod).
@@ -265,14 +269,19 @@ func (c *Client) execWithTTY(ctx context.Context, ns, pod, container string, com
 	}
 
 	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin:  stdin,
-		Stdout: stdout,
-		Stderr: stderr,
-		Tty:    tty,
+		Stdin:             stdin,
+		Stdout:            stdout,
+		Stderr:            stderr,
+		Tty:               tty,
+		TerminalSizeQueue: sizeQueue,
 	})
 }
 
 func (c *Client) ExecDefaultShell(ctx context.Context, ns, pod, container string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return c.ExecDefaultShellWithSizeQueue(ctx, ns, pod, container, stdin, stdout, stderr, nil)
+}
+
+func (c *Client) ExecDefaultShellWithSizeQueue(ctx context.Context, ns, pod, container string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue remotecommand.TerminalSizeQueue) error {
 	candidates := [][]string{
 		{"/bin/bash", "-i"},
 		{"/bin/sh", "-i"},
@@ -284,7 +293,7 @@ func (c *Client) ExecDefaultShell(ctx context.Context, ns, pod, container string
 
 	var attempts []string
 	for i, candidate := range candidates {
-		err := c.execWithTTY(ctx, ns, pod, container, probeShellCommand(candidate), nil, io.Discard, io.Discard, false)
+		err := c.execWithTTY(ctx, ns, pod, container, probeShellCommand(candidate), nil, io.Discard, io.Discard, false, nil)
 		if looksLikeMissingExecBinary(err) {
 			attempts = append(attempts, strings.Join(candidate, " "))
 			if i+1 < len(candidates) {
@@ -293,7 +302,7 @@ func (c *Client) ExecDefaultShell(ctx context.Context, ns, pod, container string
 			continue
 		}
 		if err == nil {
-			return c.Exec(ctx, ns, pod, container, candidate, stdin, stdout, stderr)
+			return c.ExecWithSizeQueue(ctx, ns, pod, container, candidate, stdin, stdout, stderr, sizeQueue)
 		}
 		return err
 	}

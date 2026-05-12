@@ -478,6 +478,41 @@ input[type="radio"] {
   flex-wrap: wrap;
 }
 
+.insight-category-label {
+  display: grid;
+  gap: 1px;
+  min-width: 150px;
+}
+
+.insight-category-label strong {
+  font-size: 14px;
+}
+
+.theme-choice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.theme-choice button {
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.theme-choice button:last-child {
+  border-right: 0;
+}
+
+.theme-choice button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 .ns-picker-list {
   max-height: 210px;
   overflow: auto;
@@ -1216,6 +1251,11 @@ body[data-theme="light"] .logs-output-wrap {
   background: var(--panel);
 }
 
+.admin-section-prominent.admin-section-configured {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--panel));
+}
+
 .insight-filters,
 .insight-card,
 .health-card,
@@ -1287,15 +1327,19 @@ body[data-theme="light"] .logs-output-wrap {
 }
 
 .severity-badge.severity-ok,
-.insight-card.status-ok,
-.google-auth-badge.configured {
+.insight-card.status-ok {
   border-color: color-mix(in srgb, var(--ok) 55%, var(--line));
 }
 
-.severity-badge.severity-ok,
-.google-auth-badge.configured {
+.severity-badge.severity-ok {
   background: var(--ok-soft);
   color: #86efac;
+}
+
+.google-auth-badge.configured {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .google-auth-badge.disabled {

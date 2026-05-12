@@ -33,7 +33,7 @@ export default function UserManagementPage({
 
   return (
     <div className="admin-sections">
-      <section className="admin-section admin-section-prominent">
+      <section className="admin-section admin-section-prominent admin-section-configured">
         <div className="admin-section-header">
           <div>
             <div className="small-label">Local Users and Roles</div>
@@ -127,7 +127,7 @@ export default function UserManagementPage({
         </div>
       </section>
 
-      <section className="admin-section admin-section-prominent">
+      <section className={`admin-section admin-section-prominent ${googleAuthConfigured ? 'admin-section-configured' : ''}`.trim()}>
         <div className="admin-section-header">
           <div>
             <div className="small-label">Google OAuth</div>
@@ -192,7 +192,7 @@ export default function UserManagementPage({
         </div>
       </section>
 
-      <section className="admin-section admin-section-prominent">
+      <section className={`admin-section admin-section-prominent ${genericOIDCConfigured ? 'admin-section-configured' : ''}`.trim()}>
         <div className="admin-section-header">
           <div>
             <div className="small-label">OpenID Connect</div>
@@ -257,7 +257,7 @@ export default function UserManagementPage({
         </div>
       </section>
 
-      <section className="admin-section admin-section-prominent">
+      <section className={`admin-section admin-section-prominent ${oidcAuthConfigured && isEntraConfigured ? 'admin-section-configured' : ''}`.trim()}>
         <div className="admin-section-header">
           <div>
             <div className="small-label">Azure Entra ID</div>
