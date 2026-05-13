@@ -1,30 +1,48 @@
 # BeaverDeck Helm Chart
 
-`BeaverDeck` installs BeaverDeck, a lightweight Kubernetes operations panel for day-2 cluster work.
-From one web UI, BeaverDeck can inspect cluster resources, open manifests, stream and expand logs, run `exec` sessions in pods, and perform common operational actions such as restart, scale, delete, evict, drain, and uncordon.
-It also includes an Insights view aimed at fast operational triage: it surfaces warnings and health signals for workloads, nodes, storage, ingress, and resource pressure so operators can spot likely problems before drilling into raw Kubernetes objects and events.
+`BeaverDeck` installs BeaverDeck, a lightweight Kubernetes operations workspace for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
+Its Cluster Insights workflow helps operations teams find risks before they turn into incidents: it starts with categorized signals for nodes, workloads, networking, and storage, then lets operators drill into manifests, logs, exec sessions, and remediation actions from the same UI.
+Nodes, Workloads, Networking, and Storage Insights each load only the data needed for that troubleshooting area.
 For GPU-backed clusters, Insights can also highlight visibility gaps and tracking signals (including GPU-related), helping operators confirm where capacity exists and whether the expected monitoring path is available.
 It is designed for operators who want fast visibility and common remediation workflows without switching between multiple tools for routine Kubernetes tasks.
 
-## What BeaverDeck Helps With
+## Pricing Policy
+
+All functionality currently distributed for free in the official BeaverDeck distribution will remain available for free in official BeaverDeck releases.
+Existing free functionality will continue to receive support, updates, and improvements at no charge.
+New functionality introduced in future releases may be made available for free or through a paid subscription.
+This policy does not change the Apache-2.0 license terms for already distributed source code.
+
+## Insights-First Triage
 
 ![BeaverDeck Overview](https://raw.githubusercontent.com/arequs/beaverdeck/main/docs/images/overview.png)
 
-From one interface, BeaverDeck can help operators:
+BeaverDeck is built around the Insights workflow.
+Instead of starting from raw object tables, operators can begin with grouped alerts and health signals, then open the exact resource, logs, or manifest connected to the finding.
+
+Insights are split into focused categories:
+
+- Nodes: readiness, pressure conditions, metrics availability, GPU visibility, and capacity signals
+- Workloads: pod and controller health, restart patterns, pending or unhealthy pods, resource request pressure, and security context warnings
+- Networking: ingress and service signals that help narrow traffic-routing issues
+- Storage: PVC binding state, volume usage, storage class visibility, and persistent storage pressure
+
+Each category loads only the Kubernetes data needed for that view, so looking at Node Insights does not trigger pod-heavy checks unless that category needs them.
+This keeps BeaverDeck responsive on larger clusters and makes the troubleshooting path more predictable.
+
+## Operations Workspace
+
+After an Insight points to a likely issue, BeaverDeck provides the operational tools needed to confirm and act:
 
 - browse cluster objects such as pods, workloads, nodes, services, ingresses, config maps, secrets, PVCs, PVs, storage classes, CRDs, and events
 - inspect manifests as YAML and apply edits through the UI
 - stream pod and workload logs, including older log history when troubleshooting
 - open `exec` sessions into running pods
 - run common operational actions such as scale, restart, delete, evict, drain, and uncordon
-- review cluster health, warnings, and operational insights without jumping between multiple Kubernetes tools
+- review cluster health, warnings, and category-scoped operational insights without jumping between multiple Kubernetes tools
 - keep actions auditable and access controlled with users, roles, and namespace-scoped permissions
 
 ![BeaverDeck Insights](https://raw.githubusercontent.com/arequs/beaverdeck/main/docs/images/insights.png)
-
-The Insights section is intended as a first-stop troubleshooting surface.
-Instead of starting from raw events or manifests, operators can begin with summarized warnings and health checks across workloads, nodes, storage, ingress, and cluster resource pressure.
-On clusters with GPU nodes, Insights can also help validate GPU-related visibility and monitoring coverage so it is easier to confirm where GPU capacity exists and whether exporters and metrics paths are available.
 
 ## What This Chart Deploys
 
@@ -38,16 +56,20 @@ On clusters with GPU nodes, Insights can also help validate GPU-related visibili
 ## Install
 
 Create the target namespace with Helm and install the chart.
-Recommendation: enable persistence from the start to keep your custom configuration safe.
+Recommendation: enable persistence from the start to keep users, roles, audit records, auth provider settings, and custom configuration safe.
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
   --version 2.1.1 \
+  --namespace beaverdeck \
+  --create-namespace \
   --set persistence.enabled=true \
   --set persistence.size=1Gi \
   --set persistence.storageClass=standard \
   --set clusterName=your-cluster-name
 ```
+
+If you install into another namespace, replace `beaverdeck` in the examples below with that namespace.
 
 ## First Start and Common Configuration
 
@@ -59,11 +81,74 @@ Example:
 kubectl -n beaverdeck logs deployment/beaverdeck
 ```
 
+If ingress is disabled, use port-forwarding:
+
+```bash
+kubectl -n beaverdeck port-forward svc/beaverdeck 8080:80
+```
+
+Then open `http://localhost:8080`.
+
+### Authentication
+
+BeaverDeck is initialized with a local admin account and can then be configured from the Admin UI.
+Supported sign-in methods:
+
+- local users and roles
+- Google OAuth with Google Workspace group-to-role mapping
+- generic OpenID Connect with group claim mapping
+- Azure Entra ID through OIDC with Microsoft Graph group lookup when Graph scopes are granted
+
+#### Local Users and Roles
+
+Local users are always available and are used for first bootstrap.
+On first start, BeaverDeck writes a one-time bootstrap token to the pod log; enter that token in the UI and set the admin password.
+After initialization, admins can create local users, reset local passwords, revoke sessions, and assign roles.
+
+Roles can be namespace-scoped and can grant different access levels per resource area, including workloads, nodes, exec, apply, audit, insights, users, and roles.
+
+#### Google OAuth
+
+Google OAuth supports browser sign-in plus Google Workspace group-to-role mapping.
+Configure:
+
+- Google Client ID
+- Google Client Secret
+- optional Hosted Domain to restrict sign-in to one Workspace domain
+- Delegated Admin Email for Google Admin Directory group lookup
+- Service Account JSON with domain-wide delegation for group resolution
+
+After saving the provider, configure Google group mappings with group email addresses such as `platform-admins@example.com`.
+Mapped groups resolve to BeaverDeck roles during sign-in.
+
+#### OpenID Connect
+
+Generic OpenID Connect uses provider discovery and maps roles from the configured groups claim.
+Configure:
+
+- Provider Name
+- Issuer URL
+- Client ID
+- Client Secret
+- Scopes, usually `openid email profile groups`
+- optional Hosted Domain
+- Email Claim, usually `email`
+- Groups Claim, usually `groups`
+
+Group mappings should match the exact group values returned by the provider in the configured groups claim.
+
+#### Azure Entra ID
+
+For Azure Entra ID, use an issuer URL such as `https://login.microsoftonline.com/<tenant-id>/v2.0`.
+For Graph group lookup, include `User.Read` and `GroupMember.Read.All` in scopes and grant the required Microsoft Graph consent.
+Group mappings can use the group object ID, display name, mail address, or security identifier returned by Microsoft Graph.
+
 ### Important Notes
 
 - The chart does not create a `Namespace` object. Use `--namespace` and `--create-namespace` during install if needed.
 - The RBAC installed by this chart is cluster-scoped because BeaverDeck needs access to cluster-wide resources such as nodes, PVs, CRDs, storage classes, and metrics endpoints.
 - `clusterName` is displayed in the UI header. Set it explicitly to a human-readable cluster name.
+- `persistence.enabled=true` is recommended for any non-demo installation.
 
 ### Enable Ingress
 
@@ -71,17 +156,17 @@ kubectl -n beaverdeck logs deployment/beaverdeck
 ingress:
   enabled: true
   className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-  host: beaverdeck.example.com
-  path: /
+  host: example.com
+  path: /beaverdeck
   pathType: Prefix
   tls:
     - hosts:
-        - beaverdeck.example.com
-      secretName: beaverdeck-tls
+        - example.com
+      secretName: example-tls
 ```
+
+When `ingress.enabled=true`, the chart passes `ingress.path` to BeaverDeck as `BASE_PATH`.
+Use a non-root path such as `/beaverdeck` only when the ingress controller forwards that same prefix to the service.
 
 ## Values
 
