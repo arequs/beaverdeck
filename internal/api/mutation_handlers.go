@@ -1,15 +1,12 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
-	"beaverdeck/internal/audit"
 	"beaverdeck/internal/kube"
 	"github.com/gorilla/websocket"
 )
@@ -46,6 +43,14 @@ type applyRequest struct {
 	YAML         string `json:"yaml"`
 	DryRun       bool   `json:"dryRun"`
 	FieldManager string `json:"fieldManager"`
+}
+
+type updateManifestRequest struct {
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	YAML      string `json:"yaml"`
+	DryRun    bool   `json:"dryRun"`
 }
 
 type execWSMessage struct {
@@ -128,16 +133,6 @@ func (s *Server) execWS(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\n[exec error] "+msg+"\r\n"))
 	}
-	_ = s.audit.Log(context.Background(), audit.Entry{
-		Time:      time.Now().UTC(),
-		Action:    "exec",
-		Namespace: ns,
-		Resource:  "pod",
-		Name:      pod,
-		DryRun:    false,
-		Success:   execErr == nil,
-		Message:   errString(execErr),
-	})
 }
 
 func (s *Server) scaleDeployment(w http.ResponseWriter, r *http.Request) {
@@ -328,16 +323,6 @@ func (s *Server) drainNode(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.kube.DrainNode(r.Context(), req.Name, req.Force)
 	message := fmt.Sprintf("cordoned=%t force=%t evicted=%d skipped=%d failed=%d", result.Cordoned, req.Force, len(result.Evicted), len(result.Skipped), len(result.Failed))
-	_ = s.audit.Log(r.Context(), audit.Entry{
-		Time:      time.Now().UTC(),
-		Action:    "drain",
-		Namespace: "",
-		Resource:  "node",
-		Name:      req.Name,
-		DryRun:    false,
-		Success:   err == nil,
-		Message:   message + " " + errString(err),
-	})
 	if err != nil && len(result.Failed) == 0 {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -402,4 +387,46 @@ func (s *Server) applyYAML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": results, "dryRun": req.DryRun})
+}
+
+func (s *Server) updateManifest(w http.ResponseWriter, r *http.Request) {
+	var req updateManifestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	req.Namespace = strings.TrimSpace(req.Namespace)
+	req.Kind = strings.TrimSpace(req.Kind)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Kind == "" || req.Name == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("kind and name are required"))
+		return
+	}
+	resource := kindToResource(req.Kind)
+	if resource == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("unsupported kind: %s", req.Kind))
+		return
+	}
+	if !s.requirePermission(w, r, resource, "edit") {
+		return
+	}
+	if !s.namespaceAllowedForRequest(r, req.Namespace) {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+		return
+	}
+
+	result, err := s.kube.UpdateManifestYAML(
+		r.Context(),
+		req.Namespace,
+		req.Kind,
+		req.Name,
+		req.YAML,
+		req.DryRun,
+	)
+	s.logMutation(r.Context(), "update", req.Namespace, resource, req.Name, req.DryRun, err)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": []any{result}, "dryRun": req.DryRun})
 }

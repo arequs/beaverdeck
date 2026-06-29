@@ -308,64 +308,68 @@ export function RoleModal({
           </div>
         </div>
 
-        <div className="small-label">Visible Namespaces (empty = all)</div>
-        <div className="role-ns-panel">
-          <div className="role-ns-summary">
-            {roleFormNamespaces.length === 0 ? 'All namespaces' : `${roleFormNamespaces.length} selected`}
-          </div>
-          <div className="ns-picker-actions role-ns-actions">
-            <button type="button" onClick={onSelectAllNamespaces}>All</button>
-            <button type="button" onClick={onClearNamespaces}>Clear</button>
-          </div>
-          <div className="role-ns-list">
-            {namespaces.map((ns) => (
-              <label key={ns} className="role-ns-item">
-                <input type="checkbox" checked={roleFormNamespaces.includes(ns)} onChange={() => toggleRoleNamespace(ns)} />
-                <span>{ns}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+        {roleFormMode !== 'admin' && (
+          <>
+            <div className="small-label">Visible Namespaces (empty = all)</div>
+            <div className="role-ns-panel">
+              <div className="role-ns-summary">
+                {roleFormNamespaces.length === 0 ? 'All namespaces' : `${roleFormNamespaces.length} selected`}
+              </div>
+              <div className="ns-picker-actions role-ns-actions">
+                <button type="button" onClick={onSelectAllNamespaces}>All</button>
+                <button type="button" onClick={onClearNamespaces}>Clear</button>
+              </div>
+              <div className="role-ns-list">
+                {namespaces.map((ns) => (
+                  <label key={ns} className="role-ns-item">
+                    <input type="checkbox" checked={roleFormNamespaces.includes(ns)} onChange={() => toggleRoleNamespace(ns)} />
+                    <span>{ns}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-        <div className="small-label">Resource Permissions</div>
-        <div className="role-perm-toolbar">
-          <span className="role-perm-toolbar-label">Quick set:</span>
-          <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('none')}>No access</button>
-          <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('view')}>View</button>
-          <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('edit')}>Manage</button>
-          <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('full')}>Full</button>
-        </div>
-        <div className="table-wrap role-perm-wrap">
-          <table className="role-access-table">
-            <thead>
-              <tr>
-                <th>Resource</th>
-                <th>Access</th>
-                <th>Meaning</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roleResources.map((resource) => {
-                const options = rolesOptionsFor(resource);
-                const currentLevel = resolveRoleLevel(resource, permissionLevel(roleFormPermissions[resource]));
-                const currentOption = options.find((option) => option.value === currentLevel) || options[0];
-                return (
-                  <tr key={resource}>
-                    <td>{resource}</td>
-                    <td className="perm-level-cell">
-                      <select value={currentLevel} onChange={(e) => setRolePermissionLevel(resource, e.target.value)}>
-                        {options.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="role-access-hint">{currentOption?.hint || '-'}</td>
+            <div className="small-label">Resource Permissions</div>
+            <div className="role-perm-toolbar">
+              <span className="role-perm-toolbar-label">Quick set:</span>
+              <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('none')}>No access</button>
+              <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('view')}>View</button>
+              <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('edit')}>Manage</button>
+              <button type="button" className="perm-all-btn" onClick={() => setAllRolePermissionLevels('full')}>Full</button>
+            </div>
+            <div className="table-wrap role-perm-wrap">
+              <table className="role-access-table">
+                <thead>
+                  <tr>
+                    <th>Resource</th>
+                    <th>Access</th>
+                    <th>Meaning</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {roleResources.map((resource) => {
+                    const options = rolesOptionsFor(resource);
+                    const currentLevel = resolveRoleLevel(resource, permissionLevel(roleFormPermissions[resource]));
+                    const currentOption = options.find((option) => option.value === currentLevel) || options[0];
+                    return (
+                      <tr key={resource}>
+                        <td>{resource}</td>
+                        <td className="perm-level-cell">
+                          <select value={currentLevel} onChange={(e) => setRolePermissionLevel(resource, e.target.value)}>
+                            {options.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="role-access-hint">{currentOption?.hint || '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         <div className="modal-actions">
           <button onClick={onClose}>Cancel</button>
@@ -466,13 +470,13 @@ export function PasswordPromptModal({
   );
 }
 
-export function ProfileModal({ open, onClose, currentUser, selectedNamespaces, token, themeOptions, themePreference, resolvedTheme, onThemeChange, onLogout }) {
+export function ProfileModal({ open, onClose, currentUser, selectedNamespaces, themeOptions, themePreference, resolvedTheme, onThemeChange, onLogout }) {
   if (!open) return null;
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <h3>Profile</h3>
-        <p className="modal-muted">User settings and current session details.</p>
+        <p className="modal-muted">User settings.</p>
         <div className="modal-grid">
           <div>
             <div className="small-label">User</div>
@@ -489,10 +493,6 @@ export function ProfileModal({ open, onClose, currentUser, selectedNamespaces, t
           <div>
             <div className="small-label">Current Namespace</div>
             <div>{selectedNamespaces.join(', ') || '-'}</div>
-          </div>
-          <div>
-            <div className="small-label">Session Token</div>
-            <div>{token ? `••••••••${token.slice(-4)}` : '-'}</div>
           </div>
           <div>
             <div className="small-label">Application Version</div>

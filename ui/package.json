@@ -1,6 +1,6 @@
 {
   "name": "beaverdeck-ui",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,11 +11,11 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "lucide-react": "^1.14.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "lucide-react": "^1.22.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "vite": "^8.0.12"
+    "vite": "^8.1.0"
   }
 }

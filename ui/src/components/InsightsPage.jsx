@@ -24,7 +24,7 @@ export default function InsightsPage({
     <>
       <div className="toolbar fixed-toolbar">
         <div className="insight-category-label">
-          <span className="small-label">Audit Insights</span>
+          <span className="small-label">Insights</span>
           <strong>{categoryLabel}</strong>
         </div>
         <label className="toggle-row">

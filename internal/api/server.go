@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"beaverdeck/internal/audit"
 	"beaverdeck/internal/config"
 	"beaverdeck/internal/kube"
 	"beaverdeck/internal/users"
@@ -16,17 +15,16 @@ import (
 type Server struct {
 	cfg   config.Config
 	kube  *kube.Client
-	audit *audit.Store
 	users *users.Store
 	fs    http.FileSystem
 }
 
-func New(cfg config.Config, kc *kube.Client, auditStore *audit.Store, userStore *users.Store, webFS embed.FS) *Server {
+func New(cfg config.Config, kc *kube.Client, userStore *users.Store, webFS embed.FS) *Server {
 	sub, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
 		sub = webFS
 	}
-	return &Server{cfg: cfg, kube: kc, audit: auditStore, users: userStore, fs: http.FS(sub)}
+	return &Server{cfg: cfg, kube: kc, users: userStore, fs: http.FS(sub)}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -47,7 +45,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/users", s.adminUsersList)
 	mux.HandleFunc("POST /api/admin/users", s.adminUsersCreate)
 	mux.HandleFunc("POST /api/admin/users/role", s.adminUsersUpdateRole)
-	mux.HandleFunc("POST /api/admin/users/sessions/revoke", s.adminUsersRevokeSessions)
 	mux.HandleFunc("POST /api/admin/users/password-reset", s.adminUsersResetPassword)
 	mux.HandleFunc("POST /api/admin/users/delete", s.adminUsersDelete)
 	mux.HandleFunc("GET /api/admin/roles", s.adminRolesList)
@@ -68,6 +65,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/oidc/mappings", s.adminOIDCMappingsList)
 	mux.HandleFunc("POST /api/admin/oidc/mappings", s.adminOIDCMappingsUpsert)
 	mux.HandleFunc("POST /api/admin/oidc/mappings/delete", s.adminOIDCMappingsDelete)
+	mux.HandleFunc("GET /api/admin/config/export", s.adminConfigExport)
+	mux.HandleFunc("POST /api/admin/config/import", s.adminConfigImport)
 
 	mux.HandleFunc("GET /api/namespaces", s.namespaces)
 	mux.HandleFunc("GET /api/workloads", s.workloads)
@@ -90,6 +89,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/insights", s.insights)
 	mux.HandleFunc("POST /api/insights/suppress", s.setInsightSuppressed)
 	mux.HandleFunc("GET /api/manifest", s.manifest)
+	mux.HandleFunc("PUT /api/manifest", s.updateManifest)
 	mux.HandleFunc("GET /api/podlogs", s.podLogs)
 	mux.HandleFunc("GET /api/workloadlogs", s.workloadLogs)
 	mux.HandleFunc("GET /api/pods/exec/ws", s.execWS)
@@ -102,7 +102,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/pods/delete", s.deletePod)
 	mux.HandleFunc("POST /api/resources/delete", s.deleteResource)
 	mux.HandleFunc("POST /api/apply", s.applyYAML)
-	mux.HandleFunc("GET /api/audit", s.auditList)
 
 	fileServer := http.FileServer(s.fs)
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

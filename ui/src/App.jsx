@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -18,7 +18,6 @@ import ApplyYamlPage from './components/ApplyYamlPage.jsx';
 import BottomDock from './components/BottomDock.jsx';
 import { BootstrapSetupScreen, LoginScreen, SidebarNav, WorkspaceHeader } from './components/AppChrome.jsx';
 import ClusterHealthPage from './components/ClusterHealthPage.jsx';
-import AuditPage from './components/AuditPage.jsx';
 import InsightsPage from './components/InsightsPage.jsx';
 import NodesPage from './components/NodesPage.jsx';
 import PodsPage from './components/PodsPage.jsx';
@@ -76,6 +75,7 @@ import {
 import { withBasePath } from './lib/paths.js';
 
 const ACTIVE_NAV_STORAGE_KEY = 'beaverdeck.activeNav';
+const DEFAULT_EXPANDED_NAV_SECTIONS = new Set();
 const DEFAULT_OIDC_CONFIG = {
   provider_name: 'OpenID Connect',
   issuer_url: '',
@@ -124,12 +124,23 @@ function loadPersistedActiveNav() {
   }
 }
 
+function navSectionForId(menu, navId) {
+  return menu.find((group) => group.items.some((item) => item.id === navId))?.section || '';
+}
+
 function bottomTabResourceKey(namespace, kind, name) {
   const normalizedKind = String(kind || '').trim().toLowerCase();
   const resource = kindToResource(normalizedKind);
   const isClusterScoped = resource === 'clusterroles' || CLUSTER_SCOPED_RESOURCES.has(resource);
   const normalizedNamespace = isClusterScoped ? '' : String(namespace || '').trim().toLowerCase();
   return `${normalizedNamespace}:${normalizedKind}:${String(name || '').trim()}`;
+}
+
+function normalizeContainerNames(containers) {
+  if (!Array.isArray(containers)) {
+    return [];
+  }
+  return Array.from(new Set(containers.map((item) => String(item || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
 function podRefKey(namespace, name) {
@@ -142,6 +153,7 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
 
   const [activeNav, setActiveNav] = useState(loadPersistedActiveNav);
+  const [expandedNavSections, setExpandedNavSections] = useState(() => new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
   const [loadedNavs, setLoadedNavs] = useState({});
   const [initialNavLoading, setInitialNavLoading] = useState('');
   const [sortByNav, setSortByNav] = useState(SORT_DEFAULTS);
@@ -167,7 +179,6 @@ export default function App() {
   const [pvcs, setPVCs] = useState([]);
   const [pvs, setPVs] = useState([]);
   const [storageClasses, setStorageClasses] = useState([]);
-  const [audit, setAudit] = useState([]);
   const [insights, setInsights] = useState([]);
   const [showSuppressedInsights, setShowSuppressedInsights] = useState(false);
   const [showAllInsightChecks, setShowAllInsightChecks] = useState(false);
@@ -246,7 +257,7 @@ export default function App() {
 
   const [yamlText, setYamlText] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('');
-  const [bootstrapTokenInput, setBootstrapTokenInput] = useState('');
+  const [bootstrapAdminUsername, setBootstrapAdminUsername] = useState('admin');
   const [bootstrapAdminPassword, setBootstrapAdminPassword] = useState('');
   const [bootstrapAdminPasswordConfirm, setBootstrapAdminPasswordConfirm] = useState('');
   const [bootstrapError, setBootstrapError] = useState('');
@@ -272,6 +283,7 @@ export default function App() {
   const forceLogScrollRef = useRef(false);
   const pendingLogPrependRef = useRef(null);
   const bottomNoticeTimerRef = useRef(null);
+  const configImportInputRef = useRef(null);
 
   const {
     themePreference,
@@ -322,6 +334,7 @@ export default function App() {
       setStatus('');
       setShowProfile(false);
       setActiveNav('pods');
+      setExpandedNavSections(new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
       setLoadedNavs({});
       setInitialNavLoading('');
       setWorkloads([]);
@@ -342,7 +355,6 @@ export default function App() {
       setPVCs([]);
       setPVs([]);
       setStorageClasses([]);
-      setAudit([]);
       setInsights([]);
       setShowSuppressedInsights(false);
       setManagedUsers([]);
@@ -365,7 +377,7 @@ export default function App() {
       setShowOIDCConfigModal(false);
       setShowOIDCMappingsModal(false);
       setShowCreateUserModal(false);
-      setBootstrapTokenInput('');
+      setBootstrapAdminUsername('admin');
       setBootstrapAdminPassword('');
       setBootstrapAdminPasswordConfirm('');
       setBootstrapError('');
@@ -419,6 +431,34 @@ export default function App() {
     [isAdmin, userPermissions]
   );
   const visibleNavItems = useMemo(() => visibleMenu.flatMap((group) => group.items), [visibleMenu]);
+  const expandNavSectionForNav = useCallback((navId) => {
+    const section = navSectionForId(visibleMenu, navId);
+    if (!section) return;
+    setExpandedNavSections((prev) => {
+      if (prev.has(section)) return prev;
+      const next = new Set(prev);
+      next.add(section);
+      return next;
+    });
+  }, [visibleMenu]);
+  const activateNav = useCallback((nextNav) => {
+    if (!nextNav) return;
+    expandNavSectionForNav(nextNav);
+    if (nextNav !== activeNav) {
+      setActiveNav(nextNav);
+    }
+  }, [activeNav, expandNavSectionForNav]);
+  const toggleNavSection = useCallback((section) => {
+    setExpandedNavSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) {
+        next.delete(section);
+      } else {
+        next.add(section);
+      }
+      return next;
+    });
+  }, []);
 
   const activeBottomTab = useMemo(() => bottomTabs.find((t) => t.id === activeBottomTabId), [bottomTabs, activeBottomTabId]);
   const activeInsightCategory = INSIGHT_NAV_CATEGORIES[activeNav]?.value || 'nodes';
@@ -521,9 +561,9 @@ export default function App() {
 
   useEffect(() => {
     if (!visibleNavItems.find((x) => x.id === activeNav)) {
-      setActiveNav(visibleNavItems[0]?.id || 'pods');
+      activateNav(visibleNavItems[0]?.id || 'pods');
     }
-  }, [visibleNavItems, activeNav]);
+  }, [visibleNavItems, activeNav, activateNav]);
 
   useEffect(() => () => {
     Object.keys(execSocketsRef.current).forEach((id) => {
@@ -1028,7 +1068,7 @@ export default function App() {
       clearTimeout(warningHideTimerRef.current);
       warningHideTimerRef.current = null;
     }
-    setActiveNav(nextNav);
+    activateNav(nextNav);
   }
 
   async function refreshAll() {
@@ -1144,25 +1184,14 @@ export default function App() {
         const storageClassData = await api('/api/storageclasses');
         setStorageClasses(storageClassData.items || []);
       },
-      audit: async () => {
-        const auditData = await api('/api/audit?limit=200');
-        setAudit(auditData.items || []);
-      },
-      insights: async () => {
-        await refreshInsights('nodes');
-      },
-      'insights-nodes': async () => {
-        await refreshInsights('nodes');
-      },
-      'insights-workloads': async () => {
-        await refreshInsights('workloads');
-      },
-      'insights-networking': async () => {
-        await refreshInsights('networking');
-      },
-      'insights-storage': async () => {
-        await refreshInsights('storage');
-      },
+      ...Object.fromEntries(
+        Object.entries(INSIGHT_NAV_CATEGORIES).map(([navId, category]) => [
+          navId,
+          async () => {
+            await refreshInsights(category.value);
+          }
+        ])
+      ),
       'user-management': async () => {
         if (!isAdmin) return;
         await refreshUsers();
@@ -1230,7 +1259,7 @@ export default function App() {
 
   async function refreshInsights(category = activeInsightCategory) {
     if (!api) return;
-    const insightNamespaces = namespaces.length > 0 ? namespaces : selectedNamespaces;
+    const insightNamespaces = selectedNamespaces;
     if (insightNamespaces.length === 0) {
       setInsights([]);
       return;
@@ -1275,7 +1304,7 @@ export default function App() {
 
   function selectPod(pod) {
     setSelectedPod(pod);
-    setActiveNav('pods');
+    activateNav('pods');
   }
 
   function togglePodRefSelection(pod) {
@@ -1427,7 +1456,7 @@ export default function App() {
     if (!tab || tab.type !== 'logs') {
       return;
     }
-    if (tab.follow && wrap.scrollTop + wrap.clientHeight < wrap.scrollHeight - 24) {
+    if (tab.follow && !forceLogScrollRef.current && wrap.scrollTop + wrap.clientHeight < wrap.scrollHeight - 24) {
       upsertTab({ id: tab.id, follow: false }, false);
     }
     if (wrap.scrollTop <= 0) {
@@ -1489,6 +1518,45 @@ export default function App() {
     });
   }
 
+  function isSecretKind(kind) {
+    return String(kind || '').trim().toLowerCase() === 'secret';
+  }
+
+  async function fetchManifestData(namespace, kind, name, options = {}) {
+    const params = new URLSearchParams({ namespace, kind, name, _ts: String(Date.now()) });
+    if (options.revealSecret) {
+      params.set('reveal', '1');
+    }
+    return api(`/api/manifest?${params.toString()}`);
+  }
+
+  async function refreshManifestTab(tabId, tabOverride = null) {
+    const tab = tabOverride || bottomTabsRef.current.find((item) => item.id === tabId);
+    if (!tab || !['manifest', 'edit'].includes(tab.type)) {
+      return;
+    }
+    upsertTab({ id: tabId, loading: true, error: '' }, false);
+    try {
+      const revealSecret = isSecretKind(tab.kind) && tab.type === 'manifest' && tab.secretRevealed;
+      const data = await fetchManifestData(tab.namespace, tab.kind, tab.name, { revealSecret });
+      const next = {
+        id: tabId,
+        content: data.yaml || '',
+        loading: false,
+        error: ''
+      };
+      if (isSecretKind(tab.kind) && tab.type === 'manifest') {
+        next.secretDecodedData = revealSecret ? (data.decoded_data || {}) : null;
+      }
+      if (tab.type === 'edit') {
+        next.originalContent = data.yaml || '';
+      }
+      upsertTab(next, false);
+    } catch (err) {
+      upsertTab({ id: tabId, loading: false, error: err.message || String(err) }, false);
+    }
+  }
+
   async function openManifestTab(namespace, kind, name) {
     const ns = namespace || primaryNamespace || 'default';
     const id = `manifest:${bottomTabResourceKey(ns, kind, name)}`;
@@ -1497,14 +1565,30 @@ export default function App() {
       setActiveBottomTabId(id);
       return;
     }
-    upsertTab({ id, type: 'manifest', title, content: '', loading: true, error: '' });
+    const tab = { id, type: 'manifest', title, content: '', namespace: ns, kind, name, secretRevealed: false, secretDecodedData: null, loading: true, error: '' };
+    upsertTab(tab);
+    await refreshManifestTab(id, tab);
+  }
 
+  async function revealSecretManifestTab(tabId) {
+    const tab = bottomTabsRef.current.find((item) => item.id === tabId);
+    if (!tab || tab.type !== 'manifest' || !isSecretKind(tab.kind)) {
+      return;
+    }
+    upsertTab({ id: tabId, loading: true, error: '' }, false);
     try {
-      const params = new URLSearchParams({ namespace: ns, kind, name });
-      const data = await api(`/api/manifest?${params.toString()}`);
-      upsertTab({ id, type: 'manifest', title, content: data.yaml || '', loading: false, error: '' });
+      const data = await fetchManifestData(tab.namespace, tab.kind, tab.name, { revealSecret: true });
+      upsertTab({
+        id: tabId,
+        content: data.yaml || '',
+        secretRevealed: true,
+        secretDecodedData: data.decoded_data || {},
+        loading: false,
+        error: ''
+      }, false);
     } catch (err) {
-      upsertTab({ id, type: 'manifest', title, content: '', loading: false, error: err.message || String(err) });
+      upsertTab({ id: tabId, loading: false }, false);
+      throw err;
     }
   }
 
@@ -1536,36 +1620,34 @@ export default function App() {
       setActiveBottomTabId(id);
       return;
     }
-    upsertTab({ id, type: 'edit', title, content: '', namespace: ns, kind, name, loading: true, error: '' });
-
-    try {
-      const params = new URLSearchParams({ namespace: ns, kind, name });
-      const data = await api(`/api/manifest?${params.toString()}`);
-      upsertTab({ id, type: 'edit', title, content: data.yaml || '', namespace: ns, kind, name, loading: false, error: '' });
-    } catch (err) {
-      upsertTab({ id, type: 'edit', title, content: '', namespace: ns, kind, name, loading: false, error: err.message || String(err) });
-    }
+    const tab = { id, type: 'edit', title, content: '', namespace: ns, kind, name, loading: true, error: '' };
+    upsertTab(tab);
+    await refreshManifestTab(id, tab);
   }
 
   async function applyEditTab(tabId, dryRun) {
-    const tab = bottomTabs.find((t) => t.id === tabId);
+    const tab = bottomTabsRef.current.find((t) => t.id === tabId);
     if (!tab) return;
     if (!primaryNamespace && !tab.namespace) throw new Error('Select namespace first');
 
     upsertTab({ id: tabId, loading: true, error: '' }, false);
     try {
-      const data = await api('/api/apply', {
-        method: 'POST',
+      const data = await api('/api/manifest', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           namespace: tab.namespace || primaryNamespace,
+          kind: tab.kind,
+          name: tab.name,
           yaml: tab.content,
-          dryRun,
-          fieldManager: 'beaverdeck-ui'
+          dryRun
         })
       });
       upsertTab({ id: tabId, loading: false }, false);
       showBottomNoticeMessage('success', summarizeApplyResult(data, dryRun));
+      if (!dryRun) {
+        await refreshManifestTab(tabId);
+      }
       await refreshAll();
     } catch (err) {
       upsertTab({ id: tabId, loading: false }, false);
@@ -1573,7 +1655,12 @@ export default function App() {
     }
   }
 
-  async function openPodLogsTab(namespace, podName) {
+  async function openPodLogsTab(namespace, podName, container = '', containers = []) {
+    const knownPod = pods.find((item) => item.namespace === namespace && item.name === podName);
+    const containerOptions = normalizeContainerNames(
+      Array.isArray(containers) && containers.length > 0 ? containers : knownPod?.containers
+    );
+    const selectedContainer = String(container || containerOptions[0] || '').trim();
     const id = `logs:pod:${namespace}:${podName}`;
     const title = `Logs Pod/${podName}`;
     const tab = {
@@ -1590,6 +1677,8 @@ export default function App() {
       showErrors: false,
       namespace,
       pod: podName,
+      container: selectedContainer,
+      containers: containerOptions,
       tail: 400,
       canLoadOlder: true,
       loadingOlder: false
@@ -1637,13 +1726,21 @@ export default function App() {
     try {
       let text = '';
       if (tab.logKind === 'pod') {
+        const containers = normalizeContainerNames(tab.containers);
+        const container = tab.container || containers[0] || '';
         const params = new URLSearchParams({
           namespace: tab.namespace,
           pod: tab.pod,
           tail: String(tab.tail || 400),
           _ts: String(Date.now())
         });
+        if (container) {
+          params.set('container', container);
+        }
         text = await api(`/api/podlogs?${params.toString()}`);
+        if (container && container !== tab.container) {
+          upsertTab({ id: tabId, container }, false);
+        }
       } else {
         const params = new URLSearchParams({
           namespace: tab.namespace,
@@ -1653,6 +1750,9 @@ export default function App() {
           _ts: String(Date.now())
         });
         text = await api(`/api/workloadlogs?${params.toString()}`);
+      }
+      if (tab.follow) {
+        scheduleLogsScrollToBottom();
       }
       upsertTab({
         id: tabId,
@@ -1668,6 +1768,28 @@ export default function App() {
     }
   }
 
+  async function changeLogContainer(tabId, container) {
+    const tab = bottomTabsRef.current.find((item) => item.id === tabId);
+    if (!tab || tab.type !== 'logs' || tab.logKind !== 'pod') {
+      return;
+    }
+    const nextTab = {
+      ...tab,
+      container,
+      content: '',
+      loading: true,
+      error: '',
+      tail: 400,
+      canLoadOlder: true,
+      loadingOlder: false
+    };
+    upsertTab(nextTab, false);
+    await refreshLogTab(tabId, false, {
+      forceScrollToBottom: true,
+      tabOverride: nextTab
+    });
+  }
+
   function appendExecOutput(tabId, chunk) {
     if (execTerminalRef.current?.tabId === tabId) {
       execTerminalRef.current.term.write(chunk || '');
@@ -1679,9 +1801,14 @@ export default function App() {
     )));
   }
 
-  function openPodExecTab(namespace, podName, container = '') {
-    const id = `exec:pod:${namespace}:${podName}:${container || '-'}`;
-    const title = `Exec ${namespace}/${podName}`;
+  function openPodExecTab(namespace, podName, container = '', containers = []) {
+    const knownPod = pods.find((item) => item.namespace === namespace && item.name === podName);
+    const containerOptions = normalizeContainerNames(
+      Array.isArray(containers) && containers.length > 0 ? containers : knownPod?.containers
+    );
+    const selectedContainer = String(container || containerOptions[0] || '').trim();
+    const id = `exec:pod:${namespace}:${podName}:${selectedContainer || '-'}`;
+    const title = `Exec ${namespace}/${podName}${selectedContainer ? `:${selectedContainer}` : ''}`;
     const existing = execSocketsRef.current[id];
     if (existing && existing.readyState === WebSocket.OPEN) {
       setActiveBottomTabId(id);
@@ -1695,7 +1822,8 @@ export default function App() {
       content: '',
       namespace,
       pod: podName,
-      container,
+      container: selectedContainer,
+      containers: containerOptions,
       connected: false,
       loading: false,
       error: ''
@@ -1703,8 +1831,8 @@ export default function App() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const params = new URLSearchParams({ namespace, pod: podName, token, username });
-    if (container) {
-      params.set('container', container);
+    if (selectedContainer) {
+      params.set('container', selectedContainer);
     }
     const wsURL = `${protocol}//${window.location.host}${withBasePath(`/api/pods/exec/ws?${params.toString()}`)}`;
     const ws = new WebSocket(wsURL);
@@ -1900,6 +2028,48 @@ export default function App() {
     }
   }
 
+  async function exportAdminConfig() {
+	const data = await api('/api/admin/config/export');
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const blob = new Blob([String(data)], { type: 'application/yaml' });
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement('a');
+	link.href = url;
+	link.download = `beaverdeck-config-${stamp}.yaml`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function openConfigImportPicker() {
+    configImportInputRef.current?.click();
+  }
+
+  async function importAdminConfigFile(file) {
+    if (!file) return;
+    if (!window.confirm('Import BeaverDeck configuration and require sign-in again?')) {
+      if (configImportInputRef.current) {
+        configImportInputRef.current.value = '';
+      }
+      return;
+    }
+    try {
+      const text = await file.text();
+      await api('/api/admin/config/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/yaml' },
+        body: text
+      });
+      await reloadAuthProviders();
+    } finally {
+      if (configImportInputRef.current) {
+        configImportInputRef.current.value = '';
+      }
+    }
+    await logout({ revokeRemote: false, reason: 'Configuration imported. Sign in again.' });
+  }
+
   async function createUser() {
     if (!newUsername.trim() || !newUserPassword.trim()) throw new Error('username and password are required');
     await api('/api/admin/users', {
@@ -1936,15 +2106,6 @@ export default function App() {
 
   async function deleteUser(username) {
     await api('/api/admin/users/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username })
-    });
-    await refreshUsers();
-  }
-
-  async function revokeUserSessions(username) {
-    await api('/api/admin/users/sessions/revoke', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username })
@@ -2177,7 +2338,7 @@ export default function App() {
     const payload = {
       name,
       mode: roleFormMode,
-      permissions: {
+      permissions: roleFormMode === 'admin' ? {} : {
         namespaces: roleFormNamespaces,
         resources: roleFormPermissions
       }
@@ -2399,7 +2560,7 @@ export default function App() {
   function openInsightResource(alert) {
     if (!alert?.resource_kind || !alert?.resource_name) return;
     const kind = String(alert.resource_kind).toLowerCase();
-    setActiveNav(navForResourceKind(kind));
+    activateNav(navForResourceKind(kind));
     if (kind === 'pod') {
       safe(() => openManifestTab(alert.namespace || primaryNamespace, 'pod', alert.resource_name));
       return;
@@ -2415,12 +2576,12 @@ export default function App() {
     if (!alert?.resource_kind || !alert?.resource_name) return;
     const kind = String(alert.resource_kind).toLowerCase();
     if (kind === 'pod') {
-      setActiveNav('pods');
+      activateNav('pods');
       safe(() => openPodLogsTab(alert.namespace || primaryNamespace, alert.resource_name));
       return;
     }
     if (['deployment', 'statefulset', 'daemonset'].includes(kind)) {
-      setActiveNav('workloads');
+      activateNav('workloads');
       safe(() => openWorkloadLogsTab(alert.namespace || primaryNamespace, alert.resource_kind, alert.resource_name));
     }
   }
@@ -2429,7 +2590,7 @@ export default function App() {
     return (
       <LoginScreen
         title=""
-        message="Restoring session..."
+        message="Loading authentication..."
         usernameInput=""
         setUsernameInput={() => {}}
         passwordInput=""
@@ -2448,8 +2609,8 @@ export default function App() {
   if (!bootstrapState.initialized) {
     return (
       <BootstrapSetupScreen
-        bootstrapTokenInput={bootstrapTokenInput}
-        setBootstrapTokenInput={setBootstrapTokenInput}
+        adminUsername={bootstrapAdminUsername}
+        setAdminUsername={setBootstrapAdminUsername}
         adminPassword={bootstrapAdminPassword}
         setAdminPassword={setBootstrapAdminPassword}
         adminPasswordConfirm={bootstrapAdminPasswordConfirm}
@@ -2458,11 +2619,10 @@ export default function App() {
           void (async () => {
             try {
               setBootstrapError('');
-              if (!bootstrapTokenInput.trim()) throw new Error('bootstrap token is required');
+              if (!bootstrapAdminUsername.trim()) throw new Error('admin username is required');
               if (!bootstrapAdminPassword.trim()) throw new Error('admin password is required');
               if (bootstrapAdminPassword !== bootstrapAdminPasswordConfirm) throw new Error('admin passwords do not match');
-              await completeBootstrap(bootstrapTokenInput, bootstrapAdminPassword);
-              setBootstrapTokenInput('');
+              await completeBootstrap(bootstrapAdminUsername, bootstrapAdminPassword);
               setBootstrapAdminPassword('');
               setBootstrapAdminPasswordConfirm('');
             } catch (err) {
@@ -2505,6 +2665,8 @@ export default function App() {
         setSelectedNamespaces={setSelectedNamespaces}
         toggleNamespace={toggleNamespace}
         visibleMenu={visibleMenu}
+        expandedNavSections={expandedNavSections}
+        toggleNavSection={toggleNavSection}
         handleNavChange={handleNavChange}
       />
 
@@ -2851,10 +3013,13 @@ export default function App() {
             <UserManagementPage
               managedUsers={managedUsers}
               managedRoles={managedRoles}
+              configImportInputRef={configImportInputRef}
+              exportAdminConfig={exportAdminConfig}
+              openConfigImportPicker={openConfigImportPicker}
+              importAdminConfigFile={importAdminConfigFile}
               openCreateUserModal={openCreateUserModal}
               refreshUsers={refreshUsers}
               updateUserRole={updateUserRole}
-              revokeUserSessions={revokeUserSessions}
               resetLocalUserPassword={resetLocalUserPassword}
               deleteUser={deleteUser}
               openCreateRoleModal={openCreateRoleModal}
@@ -2909,8 +3074,6 @@ export default function App() {
               permissionInfo={permissionInfo}
             />
           )}
-
-          {activeNav === 'audit' && <AuditPage audit={audit} />}
             </>
           )}
           </div>
@@ -2927,6 +3090,9 @@ export default function App() {
           upsertTab={upsertTab}
           scheduleLogsScrollToBottom={scheduleLogsScrollToBottom}
           refreshLogTab={refreshLogTab}
+          changeLogContainer={changeLogContainer}
+          refreshManifestTab={refreshManifestTab}
+          revealSecretManifestTab={revealSecretManifestTab}
           handleLogsScroll={handleLogsScroll}
           logsOutputRef={logsOutputRef}
           logsEndRef={logsEndRef}
@@ -3055,7 +3221,6 @@ export default function App() {
         onClose={() => setShowProfile(false)}
         currentUser={currentUser}
         selectedNamespaces={selectedNamespaces}
-        token={token}
         themeOptions={THEME_OPTIONS}
         themePreference={themePreference}
         resolvedTheme={resolvedTheme}

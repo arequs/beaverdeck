@@ -198,6 +198,7 @@ func (c *Client) ListPods(ctx context.Context, ns string, includeMetrics bool) (
 			Restarts:            restarts,
 			Age:                 age(p.CreationTimestamp.Time),
 			Node:                p.Spec.NodeName,
+			Containers:          podContainerNames(&p),
 			MetricsAvailable:    metricsAvailable,
 			CPU:                 cpuDisplay,
 			CPUUsedMilli:        usage.cpuMilli,
@@ -220,6 +221,18 @@ func (c *Client) ListPods(ctx context.Context, ns string, includeMetrics bool) (
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+func podContainerNames(pod *corev1.Pod) []string {
+	out := make([]string, 0, len(pod.Spec.Containers))
+	for _, container := range pod.Spec.Containers {
+		if container.Name == "" {
+			continue
+		}
+		out = append(out, container.Name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (c *Client) ListCRDs(ctx context.Context) ([]CRDInfo, error) {

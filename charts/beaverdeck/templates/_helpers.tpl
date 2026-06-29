@@ -43,3 +43,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "beaverdeck.clusterRoleName" -}}
 {{- default (printf "%s-operator" (include "beaverdeck.fullname" .)) .Values.rbac.clusterRoleName -}}
 {{- end -}}
+
+{{- define "beaverdeck.suppressedInsightsConfigMapName" -}}
+{{- default (printf "%s-suppressed-insights" (include "beaverdeck.fullname" .)) .Values.suppressedInsights.configMapName | trunc 63 | trimSuffix "-" -}}
+{{- end -}}

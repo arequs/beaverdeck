@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
-	"beaverdeck/internal/audit"
 	"beaverdeck/internal/auth"
-	"beaverdeck/internal/users"
 )
 
 type rolePermission struct {
@@ -25,32 +22,7 @@ type rolePermissionSet struct {
 }
 
 func defaultPermissionSet() rolePermissionSet {
-	return rolePermissionSet{
-		Namespaces: []string{},
-		Resources: map[string]rolePermission{
-			"pods":            {View: true},
-			"workloads":       {View: true},
-			"nodes":           {View: true},
-			"services":        {View: true},
-			"clusterroles":    {View: true},
-			"rbacroles":       {View: true},
-			"serviceaccounts": {View: true},
-			"ingresses":       {View: true},
-			"configmaps":      {View: true},
-			"crds":            {View: true},
-			"secrets":         {View: true},
-			"pvcs":            {View: true},
-			"pvs":             {View: true},
-			"storageclasses":  {View: true},
-			"events":          {View: true},
-			"insights":        {View: true, Edit: true},
-			"exec":            {View: false, Edit: false, Delete: false},
-			"audit":           {View: true},
-			"apply":           {View: false, Edit: false, Delete: false},
-			"users":           {View: false, Edit: false, Delete: false},
-			"roles":           {View: false, Edit: false, Delete: false},
-		},
-	}
+	return rolePermissionSet{Namespaces: []string{}, Resources: map[string]rolePermission{}}
 }
 
 func parsePermissionSet(raw json.RawMessage) rolePermissionSet {
@@ -61,12 +33,6 @@ func parsePermissionSet(raw json.RawMessage) rolePermissionSet {
 	var parsed rolePermissionSet
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return out
-	}
-	if parsed.Resources == nil {
-		return out
-	}
-	for k, v := range parsed.Resources {
-		out.Resources[strings.ToLower(strings.TrimSpace(k))] = v
 	}
 	if len(parsed.Namespaces) > 0 {
 		seen := map[string]struct{}{}
@@ -83,6 +49,18 @@ func parsePermissionSet(raw json.RawMessage) rolePermissionSet {
 			filtered = append(filtered, n)
 		}
 		out.Namespaces = filtered
+	}
+	for k, v := range parsed.Resources {
+		if v.Delete {
+			v.Edit = true
+			v.View = true
+		}
+		if v.Edit {
+			v.View = true
+		}
+		if v.View || v.Edit || v.Delete {
+			out.Resources[strings.ToLower(strings.TrimSpace(k))] = v
+		}
 	}
 	return out
 }
@@ -224,14 +202,6 @@ func kindToResource(kind string) string {
 	}
 }
 
-func (s *Server) isViewer(r *http.Request) bool {
-	u, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		return false
-	}
-	return u.RoleMode == string(users.RoleViewer)
-}
-
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if auth.IsAdmin(r.Context()) {
 		return true
@@ -241,16 +211,13 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) logMutation(ctx context.Context, action, namespace, resource, name string, dryRun bool, err error) {
-	_ = s.audit.Log(ctx, audit.Entry{
-		Time:      time.Now().UTC(),
-		Action:    action,
-		Namespace: namespace,
-		Resource:  resource,
-		Name:      name,
-		DryRun:    dryRun,
-		Success:   err == nil,
-		Message:   errString(err),
-	})
+	_ = ctx
+	_ = action
+	_ = namespace
+	_ = resource
+	_ = name
+	_ = dryRun
+	_ = err
 }
 
 func stringsTrimOrFallback(primary, fallback string) string {

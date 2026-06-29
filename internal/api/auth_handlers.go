@@ -52,7 +52,7 @@ func (s *Server) authProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 type bootstrapCompleteRequest struct {
-	Token    string `json:"token"`
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
@@ -73,13 +73,9 @@ func (s *Server) authBootstrapComplete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.users.CompleteBootstrap(r.Context(), req.Token, req.Password); err != nil {
+	if err := s.users.CompleteBootstrap(r.Context(), req.Username, req.Password); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "already initialized") {
 			writeErr(w, http.StatusConflict, err)
-			return
-		}
-		if strings.Contains(strings.ToLower(err.Error()), "invalid bootstrap token") {
-			writeErr(w, http.StatusUnauthorized, err)
 			return
 		}
 		writeErr(w, http.StatusBadRequest, err)
@@ -124,13 +120,6 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
-	token := requestBearerToken(r)
-	if token != "" {
-		if err := s.users.RevokeSession(r.Context(), token); err != nil {
-			writeErr(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -218,11 +207,7 @@ func (s *Server) authGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
-	if err := s.users.UpsertGoogleUser(ctx, email, strings.TrimSpace(profile.Sub), role); err != nil {
-		s.redirectAuthResult(w, r, "", "", err)
-		return
-	}
-	sessionToken, err := s.users.CreateSession(ctx, email, "google")
+	sessionToken, err := s.users.CreateExternalSession(ctx, email, "google", role)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
@@ -310,6 +295,10 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
+	if strings.TrimSpace(subject) == "" {
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect account is missing subject identity"))
+		return
+	}
 	email = strings.TrimSpace(strings.ToLower(email))
 	if hosted := strings.TrimSpace(strings.ToLower(cfg.HostedDomain)); hosted != "" && !strings.HasSuffix(email, "@"+hosted) {
 		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect account %s is outside the allowed hosted domain", email))
@@ -340,11 +329,7 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
-	if err := s.users.UpsertOIDCUser(ctx, email, subject, role); err != nil {
-		s.redirectAuthResult(w, r, "", "", err)
-		return
-	}
-	sessionToken, err := s.users.CreateSession(ctx, email, "oidc")
+	sessionToken, err := s.users.CreateExternalSession(ctx, email, "oidc", role)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return

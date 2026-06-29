@@ -84,10 +84,6 @@ type oidcMappingRequest struct {
 	Role      string `json:"role,omitempty"`
 }
 
-type revokeSessionsRequest struct {
-	Username string `json:"username"`
-}
-
 type resetPasswordRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`

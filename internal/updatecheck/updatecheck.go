@@ -11,27 +11,25 @@ import (
 	"time"
 
 	"beaverdeck/internal/config"
-	"beaverdeck/internal/kube"
 	"beaverdeck/internal/users"
 )
 
 type requestPayload struct {
-	InstallationID string `json:"installationId"`
-	AppVersion     string `json:"appVersion"`
+	AppVersion string `json:"appVersion"`
 }
 
 type responsePayload struct {
 	LatestVersion string `json:"latestVersion"`
 }
 
-func Start(ctx context.Context, cfg config.Config, kc *kube.Client, userStore *users.Store) {
+func Start(ctx context.Context, cfg config.Config, userStore *users.Store) {
 	if strings.TrimSpace(cfg.UpdateCheckURL) == "" || strings.TrimSpace(cfg.AppVersion) == "" {
 		return
 	}
-	go loop(ctx, cfg, kc, userStore)
+	go loop(ctx, cfg, userStore)
 }
 
-func loop(ctx context.Context, cfg config.Config, kc *kube.Client, userStore *users.Store) {
+func loop(ctx context.Context, cfg config.Config, userStore *users.Store) {
 	timer := time.NewTimer(initialDelay(cfg))
 	defer timer.Stop()
 
@@ -40,24 +38,18 @@ func loop(ctx context.Context, cfg config.Config, kc *kube.Client, userStore *us
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			_ = runOnce(ctx, cfg, kc, userStore)
+			_ = runOnce(ctx, cfg, userStore)
 			timer.Reset(nextDelay(cfg))
 		}
 	}
 }
 
-func runOnce(ctx context.Context, cfg config.Config, kc *kube.Client, userStore *users.Store) error {
+func runOnce(ctx context.Context, cfg config.Config, userStore *users.Store) error {
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	installationID, err := installationID(reqCtx, kc, cfg)
-	if err != nil {
-		return err
-	}
-
 	payload, err := json.Marshal(requestPayload{
-		InstallationID: installationID,
-		AppVersion:     strings.TrimSpace(cfg.AppVersion),
+		AppVersion: strings.TrimSpace(cfg.AppVersion),
 	})
 	if err != nil {
 		return err
@@ -92,18 +84,6 @@ func runOnce(ctx context.Context, cfg config.Config, kc *kube.Client, userStore 
 	}
 
 	return nil
-}
-
-func installationID(ctx context.Context, kc *kube.Client, cfg config.Config) (string, error) {
-	namespaceUID, err := kc.NamespaceUID(ctx, cfg.PodNamespace)
-	if err != nil {
-		return "", err
-	}
-	serviceAccountUID, err := kc.ServiceAccountUID(ctx, cfg.PodNamespace, cfg.ServiceAccountName)
-	if err != nil {
-		return "", err
-	}
-	return namespaceUID + "-" + serviceAccountUID, nil
 }
 
 func initialDelay(cfg config.Config) time.Duration {

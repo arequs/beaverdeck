@@ -5,55 +5,43 @@
 BeaverDeck is a lightweight Kubernetes operations workspace for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
 Its Cluster Insights workflow helps operations teams find risks before they turn into incidents: it starts with categorized signals for nodes, workloads, networking, and storage, then lets operators drill into manifests, logs, exec sessions, and remediation actions from the same UI.
 
-## Pricing Policy
-
-All functionality currently distributed for free in the official BeaverDeck distribution will remain available for free in official BeaverDeck releases.
-Existing free functionality will continue to receive support, updates, and improvements at no charge.
-New functionality introduced in future releases may be made available for free or through a paid subscription.
-This policy does not change the Apache-2.0 license terms for already distributed source code.
-
 ## Quick Start
 
-Install with Helm. Persistent storage is strongly recommended so BeaverDeck keeps users, roles, audit records, auth provider settings, and other stored configuration after pod reschedules or upgrades.
+Install with Helm. BeaverDeck stores auth configuration in a Kubernetes Secret and uses `DATA_DIR` only for non-auth runtime metadata.
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
-  --version 2.1.1 \
   --namespace beaverdeck \
   --create-namespace \
-  --set persistence.enabled=true \
-  --set persistence.size=5Gi \
-  --set persistence.storageClass=standard
+  --set clusterName=your-cluster-name
 ```
 
-Change `persistence.storageClass` to the storage class available in your cluster.
+Enable chart persistence only if you want non-auth runtime metadata, such as update-check status, to survive pod restarts.
 If you do not expose the app through ingress, port-forward it:
 
 ```bash
 kubectl -n beaverdeck port-forward svc/beaverdeck 8080:80
 ```
 
-Then open `http://localhost:8080` and log in with the admin token.
-On first start, BeaverDeck writes a bootstrap token to the application log. Enter that token in the UI, then set the admin password.
-
-```bash
-kubectl -n beaverdeck logs deployment/beaverdeck
-```
+Then open `http://localhost:8080`. On first start, BeaverDeck asks for the initial admin username and password.
 
 See chart details on [Artifact Hub](https://artifacthub.io/packages/search?repo=beaverdeck).
 
 ## Insights-First Triage
 
-![BeaverDeck Overview](docs/images/overview.png)
+![BeaverDeck Insights](docs/images/insights.png)
 
 BeaverDeck is built around the Insights workflow. Instead of starting from raw object tables, operators can begin with grouped alerts and health signals, then open the exact resource, logs, or manifest connected to the finding.
 
 Insights are split into focused categories:
 
-- Nodes: readiness, pressure conditions, metrics availability, GPU visibility, and capacity signals
-- Workloads: pod and controller health, restart patterns, pending or unhealthy pods, resource request pressure, and security context warnings
+- Nodes: readiness, pressure conditions, metrics availability, requested-resource capacity, and underutilization signals
+- Workloads: pod and controller health, restart patterns, pending or unhealthy pods, and resource request pressure
+- GPU: GPU capacity discovery, allocation pressure, pending GPU workloads, and GPU node workload mix
 - Networking: ingress and service signals that help narrow traffic-routing issues
 - Storage: PVC binding state, volume usage, storage class visibility, and persistent storage pressure
+- Security: pod security context, sensitive literal environment variables, and NetworkPolicy coverage
+- Configuration: missing Secret and ConfigMap references
 
 Each category loads only the Kubernetes data needed for that view, so looking at Node Insights does not trigger pod-heavy checks unless that category needs them.
 This keeps the product fast on larger clusters and makes the troubleshooting path more predictable.
@@ -68,10 +56,10 @@ After an Insight points to a likely issue, BeaverDeck provides the operational t
 - view pod and workload logs
 - open `exec` sessions into running pods
 - run common operational actions such as scale, restart, delete, evict, drain, and uncordon
-- review cluster health and category-scoped operational insights for nodes, workloads, networking, and storage
-- keep actions auditable and access controlled with users, roles, and namespace-scoped permissions
+- review cluster health and category-scoped operational insights for nodes, workloads, GPU, networking, storage, security, and configuration
+- keep access controlled with users, roles, and namespace-scoped permissions
 
-![BeaverDeck Insights](docs/images/insights.png)
+![BeaverDeck Overview](docs/images/overview.png)
 
 ## Architecture
 
@@ -79,21 +67,109 @@ After an Insight points to a likely issue, BeaverDeck provides the operational t
 - Frontend: React + Vite
 - Runtime mode: in-cluster only
 - Authentication: local users, Google OAuth, generic OpenID Connect, and Azure Entra ID
-- Storage: SQLite in `DATA_DIR` for audit and user data
+- Auth configuration storage: Kubernetes Secret only
+- Suppressed Insights storage: Kubernetes ConfigMap
+- Local runtime metadata: SQLite in `DATA_DIR` for non-auth data such as update-check status
 
-BeaverDeck can run without persistence, but that mode is best treated as temporary or demo-only. For normal use, back `DATA_DIR` with a PVC.
+Bearer login tokens are signed in memory and are not stored server-side. A pod restart requires users to sign in again.
 
 ## Authentication Configuration
 
 Configure authentication from the Admin UI after the first local admin user is initialized.
 
+### Auth Configuration Secret
+
+On startup, BeaverDeck reads its auth configuration from a Kubernetes Secret. By default it uses `beaverdeck-config` in the pod namespace with data key `config.yaml`; override with `CONFIG_SECRET_NAME`, `CONFIG_SECRET_NAMESPACE`, and `CONFIG_SECRET_KEY` if needed.
+
+If the Secret is missing, BeaverDeck starts the initialization screen and waits for the initial admin username and password in the UI. The Secret is created only after successful initialization. If the Secret exists, BeaverDeck imports it and logs the selected path. If startup import fails, the log includes the failed stage and BeaverDeck exits without overwriting the existing Secret. Fix the Secret content, or delete the Secret to start initialization again.
+
+Admins can export and import the same YAML snapshot from the Admin UI. The snapshot includes local users, roles, Google OAuth config and mappings, and OIDC/Azure Entra ID config and mappings. Local user passwords are exported only as BeaverDeck password hashes, not raw passwords or base64-encoded passwords.
+
+Example Secret:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: beaverdeck-config
+  namespace: beaverdeck
+type: Opaque
+stringData:
+  config.yaml: |
+    schema_version: 1
+    initialized: true
+    roles:
+      - name: admin
+        mode: admin
+      - name: dev
+        mode: viewer
+        permissions:
+          namespaces:
+            - apps
+          resources:
+            clusterroles: view
+    users:
+      - username: admin
+        role: admin
+        password_hash: bdk1$180000$<salt-hex>$<digest-hex>
+    google:
+      config:
+        client_id: ""
+        client_secret: ""
+        hosted_domain: ""
+        service_account_json: ""
+        delegated_admin_email: ""
+      mappings: []
+    oidc:
+      config:
+        provider_name: OpenID Connect
+        issuer_url: ""
+        client_id: ""
+        client_secret: ""
+        scopes: openid email profile groups
+        hosted_domain: ""
+        email_claim: email
+        groups_claim: groups
+      mappings: []
+```
+
+Any role with `mode: "admin"` has full access; its `permissions` value is ignored. Non-admin roles are controlled by their `permissions`. If `permissions` is omitted, the role has no permissions. Resource permission values are compact levels: `view`, `edit`, or `full`.
+Valid partial configuration Secrets are completed during startup import. For example, a Secret that contains only a local admin-mode user and one OIDC provider is normalized with the current schema version, default admin role, empty Google config, default OIDC fields, and empty mappings before it is persisted back to the Secret after successful import.
+
+### Suppressed Insights ConfigMap
+
+Suppressed Insights are global for all users and are stored outside the auth Secret in a ConfigMap. The Helm chart creates it empty by default.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beaverdeck-suppressed-insights
+  namespace: beaverdeck
+data:
+  suppressed_insights.json: "[]"
+```
+
+The value is a JSON array of Insight check keys. Missing or empty means all checks are enabled.
+In the Helm chart, override `.Values.suppressedInsights.configMapName` or `.Values.suppressedInsights.key` if the default generated name/key is not suitable.
+
+Generate a local user password hash with the BeaverDeck binary or image:
+
+```bash
+read -rsp 'Password: ' BDPASS
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.0 hash-password
+unset BDPASS
+```
+
+Use the printed `bdk1$...` value as `password_hash`. Do not store raw passwords or base64-encoded passwords in the configuration Secret.
+
 ### Local Users and Roles
 
-Local users are always available and are used for first bootstrap.
-On first start, BeaverDeck writes a one-time bootstrap token to the pod log; enter that token in the UI and set the admin password.
-After initialization, admins can create local users, reset local passwords, revoke sessions, and assign roles.
+Local users are always available and are used for first initialization.
+On first start, BeaverDeck asks for the initial admin username and password in the UI.
+After initialization, admins can create local users, reset local passwords, and assign roles.
 
-Roles can be namespace-scoped and can grant different access levels per resource area, including workloads, nodes, exec, apply, audit, insights, users, and roles.
+Roles can be namespace-scoped and can grant different access levels per resource area, including workloads, nodes, exec, apply, insights, users, and roles.
 
 ### Google OAuth
 
@@ -133,7 +209,7 @@ Group mappings can use the group object ID, display name, mail address, or secur
 
 ## Build Requirements
 
-- Go 1.26.3 or newer
+- Go 1.26.4 or newer
 - Node.js 22 or newer for frontend builds
 
 ## Repository Layout
@@ -142,7 +218,6 @@ Group mappings can use the group object ID, display name, mail address, or secur
 - `internal/api/` - HTTP and WebSocket handlers
 - `internal/kube/` - Kubernetes client logic
 - `internal/auth/` - auth middleware
-- `internal/audit/` - audit log storage
 - `internal/users/` - user and role storage
 - `ui/` - React application
 - `charts/beaverdeck/` - Helm chart

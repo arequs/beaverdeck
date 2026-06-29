@@ -4,65 +4,68 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
 
-func (s *Store) EnsureAdmin(ctx context.Context, token string) error {
-	if strings.TrimSpace(token) == "" {
-		return errors.New("ADMIN_TOKEN is not configured")
-	}
-	passwordHash, err := hashLocalPassword(token)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, _ = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO roles (name, mode, permissions, created_at) VALUES ('admin', 'admin', '{}', ?)`, now)
-	_, _ = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO roles (name, mode, permissions, created_at) VALUES ('viewer', 'viewer', '{}', ?)`, now)
-
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO users (username, token, role, auth_source, google_subject, session_version, created_at)
-		 VALUES ('admin', ?, ?, 'local', '', 1, ?)
-		 ON CONFLICT(username) DO UPDATE SET
-		   token = excluded.token,
-		   role = excluded.role,
-		   auth_source = 'local',
-		   google_subject = '',
-		   session_version = CASE WHEN users.token = excluded.token THEN users.session_version ELSE users.session_version + 1 END`,
-		passwordHash, string(RoleAdmin), now,
-	)
-	return err
-}
-
 func (s *Store) Authenticate(ctx context.Context, token string) (*UserWithToken, error) {
-	if strings.TrimSpace(token) == "" {
-		return nil, sql.ErrNoRows
-	}
-	var (
-		user      UserWithToken
-		permsRaw  string
-		createdAt string
-	)
-	err := s.db.QueryRowContext(ctx,
-		`SELECT u.username, u.role,
-		        COALESCE(r.mode, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'viewer' END) AS mode,
-		        COALESCE(r.permissions, '{}') AS permissions,
-		        sess.token, u.auth_source, u.session_version, u.created_at
-		 FROM users u
-		 JOIN sessions sess ON sess.username = u.username
-		 LEFT JOIN roles r ON r.name = u.role
-		 WHERE sess.token = ?
-		   AND sess.session_version = u.session_version`, token,
-	).Scan(&user.Username, &user.Role, &user.RoleMode, &permsRaw, &user.Token, &user.AuthSource, &user.SessionVersion, &createdAt)
+	payload, err := s.parseSessionToken(token)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(permsRaw) == "" {
-		permsRaw = "{}"
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var user UserWithToken
+	switch payload.AuthSource {
+	case "local":
+		cfgUser, ok := s.users[payload.Username]
+		if !ok {
+			return nil, sql.ErrNoRows
+		}
+		roleDef, ok := s.roleDefLocked(cfgUser.Role)
+		if !ok {
+			return nil, sql.ErrNoRows
+		}
+		sessionVersion := s.sessionVersions[cfgUser.Username]
+		if sessionVersion < 1 {
+			sessionVersion = 1
+		}
+		if sessionVersion != payload.SessionVersion {
+			return nil, sql.ErrNoRows
+		}
+		user = UserWithToken{
+			Username:       cfgUser.Username,
+			Role:           cfgUser.Role,
+			RoleMode:       roleDef.Mode,
+			Permissions:    cloneRawMessage(roleDef.Permissions),
+			Token:          token,
+			AuthSource:     "local",
+			SessionVersion: sessionVersion,
+		}
+	case "google", "oidc":
+		roleDef, ok := s.roleDefLocked(payload.Role)
+		if !ok {
+			return nil, sql.ErrNoRows
+		}
+		user = UserWithToken{
+			Username:       payload.Username,
+			Role:           Role(roleDef.Name),
+			RoleMode:       roleDef.Mode,
+			Permissions:    cloneRawMessage(roleDef.Permissions),
+			Token:          token,
+			AuthSource:     payload.AuthSource,
+			SessionVersion: 1,
+		}
+	default:
+		return nil, sql.ErrNoRows
 	}
-	user.Permissions = json.RawMessage(permsRaw)
+	if len(user.Permissions) == 0 {
+		user.Permissions = json.RawMessage(`{}`)
+	}
 	if _, ok := normalizeRoleMode(user.RoleMode); !ok {
 		return nil, fmt.Errorf("invalid role mode for user %s", user.Username)
 	}
@@ -75,40 +78,57 @@ func (s *Store) VerifyLocalCredentials(ctx context.Context, username, password s
 	if username == "" || password == "" {
 		return nil, sql.ErrNoRows
 	}
-	var (
-		user      UserWithToken
-		permsRaw  string
-		storedPwd string
-	)
-	err := s.db.QueryRowContext(ctx,
-		`SELECT u.username, u.role,
-		        COALESCE(r.mode, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'viewer' END) AS mode,
-		        COALESCE(r.permissions, '{}') AS permissions,
-		        u.token, u.auth_source, u.session_version
-		 FROM users u
-		 LEFT JOIN roles r ON r.name = u.role
-		 WHERE u.username = ?`, username,
-	).Scan(&user.Username, &user.Role, &user.RoleMode, &permsRaw, &storedPwd, &user.AuthSource, &user.SessionVersion)
+
+	var snapshotToPersist *ConfigSnapshot
+	s.mu.Lock()
+	cfgUser, ok := s.users[username]
+	if !ok {
+		s.mu.Unlock()
+		return nil, sql.ErrNoRows
+	}
+	roleDef, ok := s.roleDefLocked(cfgUser.Role)
+	if !ok {
+		s.mu.Unlock()
+		return nil, sql.ErrNoRows
+	}
+	passwordMatched, needsUpgrade, err := verifyLocalPassword(cfgUser.PasswordHash, password)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
-	passwordMatched, needsUpgrade, err := verifyLocalPassword(storedPwd, password)
-	if err != nil {
-		return nil, err
-	}
-	if user.AuthSource != "local" || !passwordMatched {
+	if !passwordMatched {
+		s.mu.Unlock()
 		return nil, sql.ErrNoRows
 	}
 	if needsUpgrade {
 		if passwordHash, hashErr := hashLocalPassword(password); hashErr == nil {
-			_, _ = s.db.ExecContext(ctx, `UPDATE users SET token = ? WHERE username = ? AND auth_source = 'local'`, passwordHash, user.Username)
+			cfgUser.PasswordHash = passwordHash
+			s.users[username] = cfgUser
+			snapshot := s.snapshotLocked()
+			snapshotToPersist = &snapshot
 		}
 	}
-	if strings.TrimSpace(permsRaw) == "" {
-		permsRaw = "{}"
+	sessionVersion := s.sessionVersions[cfgUser.Username]
+	if sessionVersion < 1 {
+		sessionVersion = 1
 	}
-	user.Permissions = json.RawMessage(permsRaw)
-	return &user, nil
+	user := &UserWithToken{
+		Username:       cfgUser.Username,
+		Role:           cfgUser.Role,
+		RoleMode:       roleDef.Mode,
+		Permissions:    cloneRawMessage(roleDef.Permissions),
+		AuthSource:     "local",
+		SessionVersion: sessionVersion,
+	}
+	if len(user.Permissions) == 0 {
+		user.Permissions = json.RawMessage(`{}`)
+	}
+	s.mu.Unlock()
+
+	if snapshotToPersist != nil {
+		_ = s.SaveConfigSnapshot(ctx, *snapshotToPersist)
+	}
+	return user, nil
 }
 
 func (s *Store) CreateSession(ctx context.Context, username, authSource string) (string, error) {
@@ -120,140 +140,124 @@ func (s *Store) CreateSession(ctx context.Context, username, authSource string) 
 	if authSource == "" {
 		authSource = "local"
 	}
-	var sessionVersion int64
-	if err := s.db.QueryRowContext(ctx, `SELECT session_version FROM users WHERE username = ?`, username).Scan(&sessionVersion); err != nil {
-		return "", err
+	if authSource != "local" {
+		return "", sql.ErrNoRows
 	}
-	token, err := randomToken()
-	if err != nil {
-		return "", err
+
+	s.mu.RLock()
+	cfgUser, ok := s.users[username]
+	if !ok {
+		s.mu.RUnlock()
+		return "", sql.ErrNoRows
 	}
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO sessions (token, username, auth_source, session_version, created_at) VALUES (?, ?, ?, ?, ?)`,
-		token, username, authSource, sessionVersion, time.Now().UTC().Format(time.RFC3339Nano),
-	)
-	if err != nil {
-		return "", err
+	sessionVersion := s.sessionVersions[cfgUser.Username]
+	if sessionVersion < 1 {
+		sessionVersion = 1
 	}
-	return token, nil
+	role := cfgUser.Role
+	s.mu.RUnlock()
+	return s.newSessionToken(username, authSource, role, sessionVersion)
 }
 
-func (s *Store) RevokeSession(ctx context.Context, token string) error {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return nil
+func (s *Store) CreateExternalSession(ctx context.Context, username, authSource string, role Role) (string, error) {
+	username = strings.TrimSpace(strings.ToLower(username))
+	authSource = strings.TrimSpace(strings.ToLower(authSource))
+	role = Role(strings.TrimSpace(strings.ToLower(string(role))))
+	if username == "" || authSource == "" {
+		return "", fmt.Errorf("external username and auth source are required")
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
-	return err
-}
-
-func (s *Store) InvalidateUserSessions(ctx context.Context, username string) error {
-	username = strings.TrimSpace(username)
-	if username == "" {
-		return fmt.Errorf("username is required")
+	if authSource != "google" && authSource != "oidc" {
+		return "", fmt.Errorf("unsupported external auth source: %s", authSource)
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	s.mu.RLock()
+	ok := s.roleExistsLocked(string(role))
+	s.mu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("role does not exist: %s", role)
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	res, err := tx.ExecContext(ctx, `UPDATE users SET session_version = session_version + 1 WHERE username = ?`, username)
-	if err != nil {
-		return err
-	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE username = ?`, username); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.newSessionToken(username, authSource, role, 1)
 }
 
 func (s *Store) List(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT u.username, u.role, u.auth_source, COALESCE(COUNT(s.token), 0) AS session_count, u.created_at
-		 FROM users u
-		 LEFT JOIN sessions s ON s.username = u.username AND s.session_version = u.session_version
-		 GROUP BY u.username, u.role, u.auth_source, u.created_at
-		 ORDER BY u.username ASC`,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	var out []User
-	for rows.Next() {
-		var (
-			user      User
-			createdAt string
-		)
-		if err := rows.Scan(&user.Username, &user.Role, &user.AuthSource, &user.SessionCount, &createdAt); err != nil {
-			return nil, err
-		}
-		if parsed, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
-			user.CreatedAt = parsed
-		}
-		out = append(out, user)
+	out := make([]User, 0, len(s.users))
+	for _, cfgUser := range s.users {
+		out = append(out, User{
+			Username:   cfgUser.Username,
+			Role:       cfgUser.Role,
+			AuthSource: "local",
+			CreatedAt:  cfgUser.CreatedAt,
+		})
 	}
-	return out, rows.Err()
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Username) < strings.ToLower(out[j].Username) })
+	return out, nil
 }
 
 func (s *Store) Create(ctx context.Context, username, token string, role Role) error {
-	username = strings.TrimSpace(username)
-	token = strings.TrimSpace(token)
-	if username == "" || token == "" {
-		return fmt.Errorf("username and password are required")
+	username, err := cleanConfigField("username", username, 160, false)
+	if err != nil {
+		return err
 	}
-	if !s.roleExists(ctx, string(role)) {
-		return fmt.Errorf("role does not exist: %s", role)
+	token = strings.TrimSpace(token)
+	role = Role(strings.TrimSpace(strings.ToLower(string(role))))
+	if token == "" {
+		return fmt.Errorf("username and password are required")
 	}
 	passwordHash, err := hashLocalPassword(token)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO users (username, token, role, auth_source, google_subject, session_version, created_at) VALUES (?, ?, ?, 'local', '', 1, ?)`,
-		username, passwordHash, string(role), time.Now().UTC().Format(time.RFC3339Nano),
-	)
-	if err != nil {
-		return fmt.Errorf("create user: %w", err)
+
+	s.mu.Lock()
+	if !s.roleExistsLocked(string(role)) {
+		s.mu.Unlock()
+		return fmt.Errorf("role does not exist: %s", role)
 	}
-	return nil
+	if s.usernameExistsFoldedLocked(username) {
+		s.mu.Unlock()
+		return fmt.Errorf("create user: user already exists")
+	}
+	if s.users == nil {
+		s.users = make(map[string]ConfigUser)
+	}
+	if s.sessionVersions == nil {
+		s.sessionVersions = make(map[string]int64)
+	}
+	s.users[username] = ConfigUser{Username: username, Role: role, PasswordHash: passwordHash, CreatedAt: time.Now().UTC()}
+	s.sessionVersions[username] = 1
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) UpdateUserRole(ctx context.Context, username string, role Role) error {
 	username = strings.TrimSpace(username)
+	role = Role(strings.TrimSpace(strings.ToLower(string(role))))
 	if username == "" {
 		return fmt.Errorf("username is required")
 	}
-	if !s.roleExists(ctx, string(role)) {
+
+	s.mu.Lock()
+	if !s.roleExistsLocked(string(role)) {
+		s.mu.Unlock()
 		return fmt.Errorf("role does not exist: %s", role)
 	}
-	if username == "admin" && role != RoleAdmin {
-		return fmt.Errorf("admin role cannot be changed")
-	}
-
-	var authSource string
-	if err := s.db.QueryRowContext(ctx, `SELECT auth_source FROM users WHERE username = ?`, username).Scan(&authSource); err != nil {
-		return err
-	}
-	if authSource != "local" {
-		return fmt.Errorf("%s user role is managed by external group mapping", authSource)
-	}
-
-	res, err := s.db.ExecContext(ctx, `UPDATE users SET role = ? WHERE username = ?`, string(role), username)
-	if err != nil {
-		return err
-	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+	cfgUser, ok := s.users[username]
+	if !ok {
+		s.mu.Unlock()
 		return sql.ErrNoRows
 	}
-	return nil
+	if s.removesLastLocalAdminLocked(username, string(role)) {
+		s.mu.Unlock()
+		return fmt.Errorf("last local admin role cannot be changed")
+	}
+	cfgUser.Role = role
+	s.users[username] = cfgUser
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) ResetLocalPassword(ctx context.Context, username, password string) error {
@@ -262,128 +266,39 @@ func (s *Store) ResetLocalPassword(ctx context.Context, username, password strin
 	if username == "" || password == "" {
 		return fmt.Errorf("username and password are required")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var authSource string
-	if err := tx.QueryRowContext(ctx, `SELECT auth_source FROM users WHERE username = ?`, username).Scan(&authSource); err != nil {
-		return err
-	}
-	if authSource != "local" {
-		return fmt.Errorf("password reset is available only for local users")
-	}
 	passwordHash, err := hashLocalPassword(password)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE users SET token = ?, session_version = session_version + 1 WHERE username = ?`, passwordHash, username); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE username = ?`, username); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
 
-func (s *Store) upsertExternalUser(ctx context.Context, username, externalSubject string, role Role, authSource string) error {
-	username = strings.TrimSpace(strings.ToLower(username))
-	externalSubject = strings.TrimSpace(externalSubject)
-	authSource = strings.TrimSpace(strings.ToLower(authSource))
-	if username == "" || externalSubject == "" || authSource == "" {
-		return fmt.Errorf("external username, subject and auth source are required")
+	s.mu.Lock()
+	cfgUser, ok := s.users[username]
+	if !ok {
+		s.mu.Unlock()
+		return sql.ErrNoRows
 	}
-	if !s.roleExists(ctx, string(role)) {
-		return fmt.Errorf("role does not exist: %s", role)
+	cfgUser.PasswordHash = passwordHash
+	s.users[username] = cfgUser
+	if s.sessionVersions == nil {
+		s.sessionVersions = make(map[string]int64)
 	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var (
-		existingUsername string
-		existingSource   string
-	)
-	err = tx.QueryRowContext(ctx,
-		`SELECT username, auth_source
-			 FROM users
-			 WHERE google_subject = ? OR username = ?
-			 ORDER BY CASE WHEN google_subject = ? THEN 0 ELSE 1 END
-			 LIMIT 1`,
-		externalSubject, username, externalSubject,
-	).Scan(&existingUsername, &existingSource)
-	switch {
-	case err == sql.ErrNoRows:
-		placeholder, randErr := randomToken()
-		if randErr != nil {
-			return randErr
-		}
-		_, err = tx.ExecContext(ctx,
-			`INSERT INTO users (username, token, role, auth_source, google_subject, session_version, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)`,
-			username, placeholder, string(role), authSource, externalSubject, time.Now().UTC().Format(time.RFC3339Nano),
-		)
-		if err != nil {
-			return fmt.Errorf("create %s user: %w", authSource, err)
-		}
-	case err != nil:
-		return err
-	default:
-		if existingSource != authSource {
-			return fmt.Errorf("user %s already exists as local user", existingUsername)
-		}
-		if existingUsername != username {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE username = ?`, existingUsername); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `UPDATE users SET username = ?, role = ?, google_subject = ?, auth_source = ?, session_version = session_version + 1 WHERE username = ?`, username, string(role), externalSubject, authSource, existingUsername); err != nil {
-				return err
-			}
-			break
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE users SET role = ?, google_subject = ?, auth_source = ? WHERE username = ?`, string(role), externalSubject, authSource, username); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
-func (s *Store) UpsertGoogleUser(ctx context.Context, username, googleSubject string, role Role) error {
-	return s.upsertExternalUser(ctx, username, googleSubject, role, "google")
-}
-
-func (s *Store) UpsertOIDCUser(ctx context.Context, username, subject string, role Role) error {
-	return s.upsertExternalUser(ctx, username, subject, role, "oidc")
+	s.sessionVersions[username] = nextSessionVersion(s.sessionVersions[username])
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) ListRoles(ctx context.Context) ([]RoleDef, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT name, mode, permissions, created_at FROM roles ORDER BY name ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	var out []RoleDef
-	for rows.Next() {
-		var (
-			role      RoleDef
-			perms     string
-			createdAt string
-		)
-		if err := rows.Scan(&role.Name, &role.Mode, &perms, &createdAt); err != nil {
-			return nil, err
-		}
-		role.Permissions = json.RawMessage(perms)
-		if parsed, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
-			role.CreatedAt = parsed
-		}
+	out := make([]RoleDef, 0, len(s.roles))
+	for _, role := range s.roles {
+		role.Permissions = cloneRawMessage(role.Permissions)
 		out = append(out, role)
 	}
-	return out, rows.Err()
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 func (s *Store) CreateRole(ctx context.Context, name, mode string, permissions json.RawMessage) error {
@@ -398,23 +313,29 @@ func (s *Store) CreateRole(ctx context.Context, name, mode string, permissions j
 	if name == string(RoleAdmin) && mode != string(RoleAdmin) {
 		return fmt.Errorf("admin role mode must stay admin")
 	}
-	if name == string(RoleViewer) && mode != string(RoleViewer) {
-		return fmt.Errorf("viewer role mode must stay viewer")
-	}
 	if len(permissions) == 0 {
 		permissions = json.RawMessage(`{}`)
 	}
-	if !json.Valid(permissions) {
-		return fmt.Errorf("permissions must be valid json")
+	if mode == string(RoleAdmin) {
+		permissions = json.RawMessage(`{}`)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO roles (name, mode, permissions, created_at) VALUES (?, ?, ?, ?)`,
-		name, mode, string(permissions), time.Now().UTC().Format(time.RFC3339Nano),
-	)
+	permissions, err := normalizeRolePermissionsJSON(permissions)
 	if err != nil {
-		return fmt.Errorf("create role: %w", err)
+		return err
 	}
-	return nil
+
+	s.mu.Lock()
+	if s.roleExistsLocked(name) {
+		s.mu.Unlock()
+		return fmt.Errorf("create role: role already exists")
+	}
+	if s.roles == nil {
+		s.roles = make(map[string]RoleDef)
+	}
+	s.roles[name] = RoleDef{Name: name, Mode: mode, Permissions: permissions, CreatedAt: time.Now().UTC()}
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) UpdateRole(ctx context.Context, name, mode string, permissions json.RawMessage) error {
@@ -429,24 +350,29 @@ func (s *Store) UpdateRole(ctx context.Context, name, mode string, permissions j
 	if name == string(RoleAdmin) && mode != string(RoleAdmin) {
 		return fmt.Errorf("admin role mode must stay admin")
 	}
-	if name == string(RoleViewer) && mode != string(RoleViewer) {
-		return fmt.Errorf("viewer role mode must stay viewer")
-	}
 	if len(permissions) == 0 {
 		permissions = json.RawMessage(`{}`)
 	}
-	if !json.Valid(permissions) {
-		return fmt.Errorf("permissions must be valid json")
+	if mode == string(RoleAdmin) {
+		permissions = json.RawMessage(`{}`)
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE roles SET mode = ?, permissions = ? WHERE name = ?`, mode, string(permissions), name)
+	permissions, err := normalizeRolePermissionsJSON(permissions)
 	if err != nil {
-		return fmt.Errorf("update role: %w", err)
+		return err
 	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+
+	s.mu.Lock()
+	roleDef, exists := s.roles[name]
+	if !exists {
+		s.mu.Unlock()
 		return sql.ErrNoRows
 	}
-	return nil
+	roleDef.Mode = mode
+	roleDef.Permissions = permissions
+	s.roles[name] = roleDef
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) DeleteRole(ctx context.Context, name string) error {
@@ -454,45 +380,43 @@ func (s *Store) DeleteRole(ctx context.Context, name string) error {
 	if name == "" {
 		return fmt.Errorf("role name is required")
 	}
-	if name == string(RoleAdmin) || name == string(RoleViewer) {
-		return fmt.Errorf("default roles cannot be deleted")
+	if name == string(RoleAdmin) {
+		return fmt.Errorf("admin role cannot be deleted")
 	}
 
-	var inUse int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE role = ?`, name).Scan(&inUse); err != nil {
-		return err
-	}
-	if inUse > 0 {
-		return fmt.Errorf("role is assigned to users")
-	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM google_group_roles WHERE role = ?`, name).Scan(&inUse); err != nil {
-		return err
-	}
-	if inUse > 0 {
-		return fmt.Errorf("role is assigned to google group mappings")
-	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM oidc_group_roles WHERE role = ?`, name).Scan(&inUse); err != nil {
-		return err
-	}
-	if inUse > 0 {
-		return fmt.Errorf("role is assigned to OpenID Connect group mappings")
-	}
-
-	res, err := s.db.ExecContext(ctx, `DELETE FROM roles WHERE name = ?`, name)
-	if err != nil {
-		return err
-	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+	s.mu.Lock()
+	if !s.roleExistsLocked(name) {
+		s.mu.Unlock()
 		return sql.ErrNoRows
 	}
-	return nil
+	for _, user := range s.users {
+		if string(user.Role) == name {
+			s.mu.Unlock()
+			return fmt.Errorf("role is assigned to users")
+		}
+	}
+	for _, mapping := range s.googleMappings {
+		if string(mapping.Role) == name {
+			s.mu.Unlock()
+			return fmt.Errorf("role is assigned to google group mappings")
+		}
+	}
+	for _, mapping := range s.oidcMappings {
+		if string(mapping.Role) == name {
+			s.mu.Unlock()
+			return fmt.Errorf("role is assigned to OpenID Connect group mappings")
+		}
+	}
+	delete(s.roles, name)
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) roleExists(ctx context.Context, name string) bool {
-	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM roles WHERE name = ?`, strings.TrimSpace(strings.ToLower(name))).Scan(&count)
-	return err == nil && count > 0
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.roleExistsLocked(name)
 }
 
 func (s *Store) Delete(ctx context.Context, username string) error {
@@ -500,20 +424,67 @@ func (s *Store) Delete(ctx context.Context, username string) error {
 	if username == "" {
 		return fmt.Errorf("username is required")
 	}
-	if username == "admin" {
-		return fmt.Errorf("admin user cannot be deleted")
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE username = ?`, username); err != nil {
-		return err
-	}
 
-	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE username = ?`, username)
-	if err != nil {
-		return err
-	}
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+	s.mu.Lock()
+	if _, ok := s.users[username]; !ok {
+		s.mu.Unlock()
 		return sql.ErrNoRows
 	}
-	return nil
+	if s.isLastLocalAdminLocked(username) {
+		s.mu.Unlock()
+		return fmt.Errorf("last local admin user cannot be deleted")
+	}
+	delete(s.users, username)
+	delete(s.sessionVersions, username)
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
+}
+
+func (s *Store) roleDefLocked(role Role) (RoleDef, bool) {
+	roleName := strings.TrimSpace(strings.ToLower(string(role)))
+	roleDef, ok := s.roles[roleName]
+	return roleDef, ok
+}
+
+func (s *Store) roleExistsLocked(name string) bool {
+	_, ok := s.roles[strings.TrimSpace(strings.ToLower(name))]
+	return ok
+}
+
+func (s *Store) usernameExistsFoldedLocked(username string) bool {
+	username = strings.ToLower(strings.TrimSpace(username))
+	for existing := range s.users {
+		if strings.ToLower(existing) == username {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) isLastLocalAdminLocked(username string) bool {
+	cfgUser, ok := s.users[username]
+	if !ok {
+		return false
+	}
+	roleDef, ok := s.roleDefLocked(cfgUser.Role)
+	if !ok || roleDef.Mode != string(RoleAdmin) {
+		return false
+	}
+	adminCount := 0
+	for _, user := range s.users {
+		roleDef, ok := s.roleDefLocked(user.Role)
+		if ok && roleDef.Mode == string(RoleAdmin) {
+			adminCount++
+		}
+	}
+	return adminCount <= 1
+}
+
+func (s *Store) removesLastLocalAdminLocked(username, nextRole string) bool {
+	if !s.isLastLocalAdminLocked(username) {
+		return false
+	}
+	nextRoleDef, ok := s.roleDefLocked(Role(nextRole))
+	return !ok || nextRoleDef.Mode != string(RoleAdmin)
 }

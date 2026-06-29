@@ -38,26 +38,27 @@ export function terminalThemeFor(mode) {
     return {
       background: '#f8fafc',
       foreground: '#0f172a',
-      cursor: '#2563eb'
+      cursor: '#2563eb',
+      selectionBackground: '#2563eb',
+      selectionForeground: '#ffffff',
+      selectionInactiveBackground: '#93c5fd'
     };
   }
   return {
     background: '#0a0f18',
     foreground: '#dbeafe',
-    cursor: '#93c5fd'
+    cursor: '#93c5fd',
+    selectionBackground: '#2563eb',
+    selectionForeground: '#ffffff',
+    selectionInactiveBackground: '#1d4ed8'
   };
 }
 
 export function defaultRolePermissions() {
   const resources = {};
   ROLE_RESOURCES.forEach((resource) => {
-    resources[resource] = { view: true, edit: false, delete: false };
+    resources[resource] = { view: false, edit: false, delete: false };
   });
-  resources.exec = { view: false, edit: false, delete: false };
-  resources.apply = { view: false, edit: false, delete: false };
-  resources.users = { view: false, edit: false, delete: false };
-  resources.roles = { view: false, edit: false, delete: false };
-  resources.insights = { view: true, edit: true, delete: false };
   return { namespaces: [], resources };
 }
 
@@ -69,12 +70,23 @@ export function normalizeRolePermissions(raw) {
   }
   if (raw.resources && typeof raw.resources === 'object') {
     ROLE_RESOURCES.forEach((resource) => {
-      if (raw.resources[resource] && typeof raw.resources[resource] === 'object') {
-        base.resources[resource] = {
-          view: Boolean(raw.resources[resource].view),
-          edit: Boolean(raw.resources[resource].edit),
-          delete: Boolean(raw.resources[resource].delete)
+      const value = raw.resources[resource];
+      if (typeof value === 'string') {
+        base.resources[resource] = permissionFlags(value);
+      } else if (value && typeof value === 'object') {
+        const next = {
+          view: Boolean(value.view),
+          edit: Boolean(value.edit),
+          delete: Boolean(value.delete)
         };
+        if (next.delete) {
+          next.edit = true;
+          next.view = true;
+        }
+        if (next.edit) {
+          next.view = true;
+        }
+        base.resources[resource] = next;
       }
     });
   }

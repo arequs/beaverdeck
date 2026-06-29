@@ -2,17 +2,15 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations panel
 type: application
-version: 2.1.1
-appVersion: "1.4.1"
-home: https://github.com/arequs/beaverdeck
+version: 2.2.1
+appVersion: "1.5.0"
+home: https://arequs.com/beaverdeck/
+sources:
+  - https://github.com/arequs/beaverdeck
 icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.png
 annotations:
   artifacthub.io/changes: |
     - kind: fixed
-      description: "Fixed pod exec terminal resize handling so long commands wrap correctly."
+      description: "Corrected the placement and labels of the Overview and Insights screenshots."
     - kind: changed
-      description: "Split Audit Insights into Nodes, Workloads, Networking, and Storage views with category-scoped loading."
-    - kind: fixed
-      description: "Separated OpenID Connect and Azure Entra ID configuration editing state."
-    - kind: changed
-      description: "Updated the default BeaverDeck image to 1.4.1."
+      description: "Removed release policy text from the Helm chart description."

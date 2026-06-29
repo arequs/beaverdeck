@@ -211,7 +211,7 @@ export default function PodsPage({
                         aria-label="Open pod logs"
                         disabled={!allAllowed(selectionDisabledCheck, logsPermission).allowed}
                         title={allAllowed(selectionDisabledCheck, logsPermission).allowed ? 'Logs' : allAllowed(selectionDisabledCheck, logsPermission).reason}
-                        onClick={() => safe(() => openPodLogsTab(p.namespace, p.name))}
+                        onClick={() => safe(() => openPodLogsTab(p.namespace, p.name, '', p.containers))}
                       >
                         <Logs className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
                       </button>
@@ -221,7 +221,7 @@ export default function PodsPage({
                         aria-label="Open pod exec"
                         disabled={!allAllowed(selectionDisabledCheck, execPermission).allowed}
                         title={allAllowed(selectionDisabledCheck, execPermission).allowed ? 'Exec' : allAllowed(selectionDisabledCheck, execPermission).reason}
-                        onClick={() => safe(() => openPodExecTab(p.namespace, p.name))}
+                        onClick={() => safe(() => openPodExecTab(p.namespace, p.name, '', p.containers))}
                       >
                         <SquareTerminal className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
                       </button>

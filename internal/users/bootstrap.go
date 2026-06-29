@@ -3,182 +3,108 @@ package users
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
 
-const (
-	appStateInitializedKey    = "initialized"
-	appStateBootstrapTokenKey = "bootstrap_token"
-)
-
 func (s *Store) EnsureDefaults(ctx context.Context) error {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO roles (name, mode, permissions, created_at) VALUES ('admin', 'admin', '{}', ?)`, now); err != nil {
-		return err
-	}
-	if _, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO roles (name, mode, permissions, created_at) VALUES ('viewer', 'viewer', '{}', ?)`, now); err != nil {
-		return err
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureDefaultsLocked(time.Now().UTC())
 	return nil
+}
+
+func (s *Store) ensureDefaultsLocked(now time.Time) {
+	if s.roles == nil {
+		s.roles = make(map[string]RoleDef)
+	}
+	if _, ok := s.roles[string(RoleAdmin)]; !ok {
+		s.roles[string(RoleAdmin)] = RoleDef{Name: string(RoleAdmin), Mode: string(RoleAdmin), Permissions: json.RawMessage(`{}`), CreatedAt: now}
+		return
+	}
+	role := s.roles[string(RoleAdmin)]
+	role.Mode = string(RoleAdmin)
+	role.Permissions = json.RawMessage(`{}`)
+	s.roles[string(RoleAdmin)] = role
 }
 
 func (s *Store) PrepareBootstrap(ctx context.Context) (BootstrapStatus, error) {
 	if err := s.EnsureDefaults(ctx); err != nil {
 		return BootstrapStatus{}, err
 	}
-
-	status, err := s.GetBootstrapStatus(ctx)
-	if err != nil {
-		return BootstrapStatus{}, err
-	}
-	if status.Initialized {
-		return status, nil
-	}
-
-	legacyAdmin, err := s.hasLegacyLocalAdmin(ctx)
-	if err != nil {
-		return BootstrapStatus{}, err
-	}
-	if legacyAdmin {
-		if err := s.setAppState(ctx, appStateInitializedKey, "true"); err != nil {
-			return BootstrapStatus{}, err
-		}
-		if err := s.setAppState(ctx, appStateBootstrapTokenKey, ""); err != nil {
-			return BootstrapStatus{}, err
-		}
-		return BootstrapStatus{Initialized: true}, nil
-	}
-
-	token, err := randomToken()
-	if err != nil {
-		return BootstrapStatus{}, err
-	}
-	if err := s.setAppState(ctx, appStateInitializedKey, "false"); err != nil {
-		return BootstrapStatus{}, err
-	}
-	if err := s.setAppState(ctx, appStateBootstrapTokenKey, token); err != nil {
-		return BootstrapStatus{}, err
-	}
-	return BootstrapStatus{Initialized: false, Token: token}, nil
+	return s.GetBootstrapStatus(ctx)
 }
 
 func (s *Store) GetBootstrapStatus(ctx context.Context) (BootstrapStatus, error) {
-	initializedValue, err := s.getAppState(ctx, appStateInitializedKey)
-	if err != nil {
-		return BootstrapStatus{}, err
-	}
-	tokenValue, err := s.getAppState(ctx, appStateBootstrapTokenKey)
-	if err != nil {
-		return BootstrapStatus{}, err
-	}
-	return BootstrapStatus{
-		Initialized: strings.EqualFold(strings.TrimSpace(initializedValue), "true"),
-		Token:       strings.TrimSpace(tokenValue),
-	}, nil
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return BootstrapStatus{Initialized: s.hasLocalAdminLocked()}, nil
 }
 
-func (s *Store) CompleteBootstrap(ctx context.Context, bootstrapToken, adminPassword string) error {
-	bootstrapToken = strings.TrimSpace(bootstrapToken)
+func (s *Store) CompleteBootstrap(ctx context.Context, adminUsername, adminPassword string) error {
+	adminUsername, err := cleanConfigField("admin username", adminUsername, 160, false)
+	if err != nil {
+		return err
+	}
 	adminPassword = strings.TrimSpace(adminPassword)
-	if bootstrapToken == "" || adminPassword == "" {
-		return fmt.Errorf("bootstrap token and admin password are required")
+	if adminPassword == "" {
+		return fmt.Errorf("admin password is required")
 	}
 	passwordHash, err := hashLocalPassword(adminPassword)
 	if err != nil {
 		return err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if err := s.ensureDefaultsTx(ctx, tx); err != nil {
-		return err
-	}
-
-	initializedValue, err := getAppStateTx(ctx, tx, appStateInitializedKey)
-	if err != nil {
-		return err
-	}
-	if strings.EqualFold(strings.TrimSpace(initializedValue), "true") {
+	s.mu.Lock()
+	s.ensureDefaultsLocked(time.Now().UTC())
+	if s.hasLocalAdminLocked() {
+		s.mu.Unlock()
 		return fmt.Errorf("application is already initialized")
 	}
 
-	expectedToken, err := getAppStateTx(ctx, tx, appStateBootstrapTokenKey)
-	if err != nil {
-		return err
+	if s.users == nil {
+		s.users = make(map[string]ConfigUser)
 	}
-	if strings.TrimSpace(expectedToken) == "" || bootstrapToken != strings.TrimSpace(expectedToken) {
-		return fmt.Errorf("invalid bootstrap token")
+	if s.sessionVersions == nil {
+		s.sessionVersions = make(map[string]int64)
 	}
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO users (username, token, role, auth_source, google_subject, session_version, created_at)
-		 VALUES ('admin', ?, ?, 'local', '', 1, ?)
-		 ON CONFLICT(username) DO UPDATE SET
-		   token = excluded.token,
-		   role = excluded.role,
-		   auth_source = 'local',
-		   google_subject = '',
-		   session_version = CASE WHEN users.token = excluded.token THEN users.session_version ELSE users.session_version + 1 END`,
-		passwordHash, string(RoleAdmin), now,
-	); err != nil {
-		return err
+	s.users[adminUsername] = ConfigUser{
+		Username:     adminUsername,
+		Role:         RoleAdmin,
+		PasswordHash: passwordHash,
+		CreatedAt:    time.Now().UTC(),
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE username = 'admin'`); err != nil {
-		return err
-	}
-	if err := setAppStateTx(ctx, tx, appStateInitializedKey, "true"); err != nil {
-		return err
-	}
-	if err := setAppStateTx(ctx, tx, appStateBootstrapTokenKey, ""); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	s.sessionVersions[adminUsername] = nextSessionVersion(s.sessionVersions[adminUsername])
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.SaveConfigSnapshot(ctx, snapshot)
 }
 
-func (s *Store) ensureDefaultsTx(ctx context.Context, tx *sql.Tx) error {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO roles (name, mode, permissions, created_at) VALUES ('admin', 'admin', '{}', ?)`, now); err != nil {
-		return err
+func nextSessionVersion(current int64) int64 {
+	if current < 1 {
+		return 1
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO roles (name, mode, permissions, created_at) VALUES ('viewer', 'viewer', '{}', ?)`, now); err != nil {
-		return err
-	}
-	return nil
+	return current + 1
 }
 
-func (s *Store) hasLegacyLocalAdmin(ctx context.Context) (bool, error) {
-	var exists int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT CASE WHEN EXISTS(
-			SELECT 1 FROM users WHERE username = 'admin' AND auth_source = 'local' AND TRIM(token) <> ''
-		) THEN 1 ELSE 0 END`,
-	).Scan(&exists)
-	return exists == 1, err
+func (s *Store) hasLocalAdminLocked() bool {
+	for _, user := range s.users {
+		if strings.TrimSpace(user.PasswordHash) == "" {
+			continue
+		}
+		role, ok := s.roles[string(user.Role)]
+		if ok && role.Mode == string(RoleAdmin) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) getAppState(ctx context.Context, key string) (string, error) {
-	return getAppStateQuerier(ctx, s.db, key)
-}
-
-func getAppStateTx(ctx context.Context, tx *sql.Tx, key string) (string, error) {
-	return getAppStateQuerier(ctx, tx, key)
-}
-
-type queryRower interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-func getAppStateQuerier(ctx context.Context, q queryRower, key string) (string, error) {
 	var value string
-	err := q.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -187,15 +113,6 @@ func getAppStateQuerier(ctx context.Context, q queryRower, key string) (string, 
 
 func (s *Store) setAppState(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		key, value, time.Now().UTC().Format(time.RFC3339Nano),
-	)
-	return err
-}
-
-func setAppStateTx(ctx context.Context, tx *sql.Tx, key, value string) error {
-	_, err := tx.ExecContext(ctx,
 		`INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value, time.Now().UTC().Format(time.RFC3339Nano),

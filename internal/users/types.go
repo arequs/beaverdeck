@@ -1,12 +1,14 @@
 package users
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,11 +20,10 @@ const (
 )
 
 type User struct {
-	Username     string    `json:"username"`
-	Role         Role      `json:"role"`
-	AuthSource   string    `json:"auth_source"`
-	SessionCount int       `json:"session_count"`
-	CreatedAt    time.Time `json:"created_at"`
+	Username   string    `json:"username"`
+	Role       Role      `json:"role"`
+	AuthSource string    `json:"auth_source"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type RoleDef struct {
@@ -76,12 +77,22 @@ type OIDCGroupRole struct {
 }
 
 type BootstrapStatus struct {
-	Initialized bool   `json:"initialized"`
-	Token       string `json:"-"`
+	Initialized bool `json:"initialized"`
 }
 
 type Store struct {
-	db *sql.DB
+	db                *sql.DB
+	sessionSigningKey []byte
+	mu                sync.RWMutex
+	roles             map[string]RoleDef
+	users             map[string]ConfigUser
+	sessionVersions   map[string]int64
+	googleConfig      GoogleConfig
+	googleMappings    map[string]GoogleGroupRole
+	oidcConfig        OIDCConfig
+	oidcMappings      map[string]OIDCGroupRole
+	configSaverMu     sync.RWMutex
+	configSaver       func(context.Context, ConfigSnapshot) error
 }
 
 func normalizeRoleMode(value string) (string, bool) {

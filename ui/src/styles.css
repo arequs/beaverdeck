@@ -540,7 +540,7 @@ input[type="radio"] {
 }
 
 .nav-section-title {
-  padding: 8px 12px 5px;
+  padding: 6px 12px 3px;
   color: var(--muted);
   font-size: 10px;
   text-transform: uppercase;
@@ -549,25 +549,53 @@ input[type="radio"] {
 
 .menu-group {
   display: grid;
-  gap: 1px;
-  padding: 0 8px 7px;
+  gap: 0;
+  padding: 0 8px 3px;
 }
 
 .menu-group-title {
-  margin: 7px 4px 3px;
+  width: calc(100% - 8px);
+  min-height: 22px;
+  justify-content: flex-start;
+  margin: 3px 4px 1px;
+  padding: 2px 5px;
+  border-color: transparent;
+  background: transparent;
   color: var(--muted-2);
   font-size: 10px;
   font-weight: 650;
   text-transform: uppercase;
 }
 
+button.menu-group-title:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted-2);
+}
+
+button.menu-group-title:focus-visible {
+  border-color: var(--accent);
+  background: transparent;
+  color: var(--accent-strong);
+}
+
+.menu-group-title svg {
+  flex: 0 0 auto;
+}
+
+.menu-group-items {
+  display: grid;
+  gap: 1px;
+}
+
 .nav-item {
   width: 100%;
+  min-height: 24px;
   justify-content: flex-start;
   border-color: transparent;
   background: transparent;
   color: var(--text);
-  padding: 6px 7px;
+  padding: 3px 7px;
   font-size: 12px;
 }
 
@@ -1032,6 +1060,51 @@ body[data-theme="light"] .exec-terminal {
 body[data-theme="light"] .yaml-block .yaml-key { color: #0369a1; }
 body[data-theme="light"] .yaml-block .yaml-value { color: #92400e; }
 
+.secret-reveal-panel {
+  display: grid;
+  gap: 6px;
+  min-height: 0;
+  max-height: min(38vh, 220px);
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  overflow: auto;
+}
+
+.secret-reveal-list {
+  display: grid;
+  gap: 6px;
+}
+
+.secret-reveal-item {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.secret-reveal-key {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.secret-reveal-item pre {
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .log-block {
   white-space: pre-wrap;
 }
@@ -1155,12 +1228,28 @@ body[data-theme="light"] .yaml-block .yaml-value { color: #92400e; }
 }
 
 .edit-pane {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.manifest-view-content {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 7px;
+  overflow: hidden;
+}
+
+.manifest-view-content.with-secret-reveal {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .logs-pane,
 .exec-pane {
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.exec-pane-with-toolbar {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .edit-pane .code-textarea,
@@ -1364,6 +1453,47 @@ body[data-theme="light"] .logs-output-wrap {
 .stacked-table-wrap,
 .admin-table-wrap {
   max-height: min(34vh, 360px);
+}
+
+.admin-users-table {
+  min-width: 620px;
+  table-layout: fixed;
+}
+
+.admin-users-table th:nth-child(1) {
+  width: 25%;
+}
+
+.admin-users-table th:nth-child(2) {
+  width: 13%;
+}
+
+.admin-users-table th:nth-child(3) {
+  width: 18%;
+}
+
+.admin-users-table th:nth-child(4) {
+  width: 26%;
+}
+
+.admin-users-table th:nth-child(5) {
+  width: 136px;
+}
+
+.admin-users-table td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-users-table td:nth-child(4) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-role-select {
+  min-width: 0;
+  width: 84px;
 }
 
 .admin-section .fixed-toolbar,
@@ -1645,7 +1775,14 @@ body[data-theme="light"] .modal-backdrop {
 
   .menu-group-title {
     flex: 0 0 auto;
+    width: auto;
     margin: 0 6px 0 4px;
+  }
+
+  .menu-group-items {
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .nav-item {

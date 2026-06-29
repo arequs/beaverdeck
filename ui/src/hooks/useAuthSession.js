@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AUTH_EXPIRED_EVENT, createApi, publicApi } from '../lib/api.js';
-import { AUTH_STORAGE_KEY, NAMESPACE_STORAGE_KEY } from '../lib/appConstants.js';
+import { NAMESPACE_STORAGE_KEY } from '../lib/appConstants.js';
 import { defaultRolePermissions, getStoredThemePreference, normalizeRolePermissions } from '../lib/appUtils.js';
 import { withBasePath } from '../lib/paths.js';
 
@@ -26,12 +26,10 @@ const DEFAULT_CURRENT_USER = {
   permissions: defaultRolePermissions()
 };
 
-function persistAuth(nextUsername, nextToken) {
-  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ username: nextUsername, token: nextToken }));
-}
+const LEGACY_AUTH_STORAGE_KEY = 'beaverdeck-auth';
 
 function clearStoredAuth() {
-  localStorage.removeItem(AUTH_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
 }
 
 function persistNamespaces(nextNamespaces) {
@@ -159,7 +157,6 @@ export default function useAuthSession({
       setUsernameInput(nextUsername);
       setPasswordInput('');
     }
-    persistAuth(nextUsername, nextToken);
     persistNamespaces(effectiveNamespaces);
   }
 
@@ -184,20 +181,20 @@ export default function useAuthSession({
     }
   }
 
-  async function completeBootstrap(tokenInput, password) {
+  async function completeBootstrap(adminUsername, password) {
     await publicApi('/api/auth/bootstrap/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token: tokenInput.trim(),
+        username: adminUsername.trim(),
         password: password.trim()
       })
     });
     setBootstrapState({ initialized: true });
     await loadAuthProviders();
-    setUsernameInput('admin');
+    setUsernameInput(adminUsername.trim());
     setPasswordInput('');
-    setAuthError('Initialization complete. Sign in as admin.');
+    setAuthError('Initialization complete. Sign in as the admin user.');
   }
 
   function startGoogleLogin() {
@@ -273,14 +270,7 @@ export default function useAuthSession({
           await initializeSession(authCallback.username, authCallback.token);
           return;
         }
-        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed.username !== 'string' || typeof parsed.token !== 'string' || !parsed.username || !parsed.token) {
-          clearStoredAuth();
-          return;
-        }
-        await initializeSession(parsed.username, parsed.token, { restoreInputs: true });
+        clearStoredAuth();
       } catch {
         clearStoredAuth();
         clearStoredNamespaces();

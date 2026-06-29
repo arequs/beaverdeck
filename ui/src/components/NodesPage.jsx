@@ -119,7 +119,7 @@ export default function NodesPage({
                       makeAction('Drain', permissionInfo('nodes', 'edit'), () => openDrainModal(n.name)),
                       makeAction('Uncordon', permissionInfo('nodes', 'edit'), () => safe(() => uncordonNodeAction(n.name))),
                       makeAction('Manifest', permissionInfo('nodes', 'view'), () => safe(() => openManifestTab(primaryNamespace, 'node', n.name))),
-                      makeAction('Edit', allAllowed(permissionInfo('nodes', 'edit'), permissionInfo('apply', 'edit')), () => safe(() => openEditTab(primaryNamespace, 'node', n.name)))
+                      makeAction('Edit', permissionInfo('nodes', 'edit'), () => safe(() => openEditTab(primaryNamespace, 'node', n.name)))
                     ]}
                   />
                 </td>

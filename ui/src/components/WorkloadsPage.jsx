@@ -70,7 +70,7 @@ export default function WorkloadsPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('workloads', 'view', w.namespace), () => safe(() => openManifestTab(w.namespace, w.kind, w.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('workloads', 'edit', w.namespace), permissionInfo('apply', 'edit', w.namespace)), () => safe(() => openEditTab(w.namespace, w.kind, w.name))),
+                    makeAction('Edit', permissionInfo('workloads', 'edit', w.namespace), () => safe(() => openEditTab(w.namespace, w.kind, w.name))),
                     makeAction('Logs', permissionInfo('workloads', 'view', w.namespace), () => safe(() => openWorkloadLogsTab(w.namespace, w.kind, w.name))),
                     makeAction(
                       'Scale',

@@ -7,7 +7,7 @@ metadata:
     {{- include "beaverdeck.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "pods/exec", "events", "configmaps", "secrets", "services", "serviceaccounts", "persistentvolumeclaims", "persistentvolumes", "nodes", "nodes/proxy"]
+    resources: ["pods", "pods/log", "pods/exec", "events", "configmaps", "secrets", "services", "serviceaccounts", "resourcequotas", "persistentvolumeclaims", "persistentvolumes", "nodes", "nodes/proxy"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments", "deployments/scale", "statefulsets", "daemonsets", "replicasets"]

@@ -1,11 +1,15 @@
 import React from 'react';
+import ActionMenu from './ActionMenu.jsx';
 
 export default function UserManagementPage({
   managedUsers,
   managedRoles,
+  configImportInputRef,
+  exportAdminConfig,
+  openConfigImportPicker,
+  importAdminConfigFile,
   openCreateUserModal,
   updateUserRole,
-  revokeUserSessions,
   resetLocalUserPassword,
   deleteUser,
   openCreateRoleModal,
@@ -33,6 +37,26 @@ export default function UserManagementPage({
 
   return (
     <div className="admin-sections">
+      <section className="admin-section admin-section-prominent">
+        <div className="admin-section-header">
+          <div>
+            <div className="small-label">Configuration Backup</div>
+            <div className="admin-section-description">Export or import BeaverDeck auth configuration, roles, mappings and local users.</div>
+          </div>
+          <div className="toolbar fixed-toolbar admin-section-actions">
+            <button onClick={() => safe(exportAdminConfig)}>Export Configuration</button>
+            <button className="secondary" onClick={openConfigImportPicker}>Import Configuration</button>
+            <input
+              ref={configImportInputRef}
+              type="file"
+              accept="application/yaml,text/yaml,.yaml,.yml"
+              hidden
+              onChange={(event) => safe(() => importAdminConfigFile(event.target.files?.[0]))}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="admin-section admin-section-prominent admin-section-configured">
         <div className="admin-section-header">
           <div>
@@ -47,13 +71,12 @@ export default function UserManagementPage({
 
         <div className="small-label">Users</div>
         <div className="table-wrap admin-table-wrap">
-          <table>
+          <table className="admin-users-table">
             <thead>
               <tr>
                 <th>Username</th>
                 <th>Source</th>
                 <th>Role</th>
-                <th>Sessions</th>
                 <th>Created</th>
                 <th>Actions</th>
               </tr>
@@ -64,26 +87,33 @@ export default function UserManagementPage({
                   <td>{u.username}</td>
                   <td>{u.auth_source}</td>
                   <td>{u.role}</td>
-                  <td>{u.session_count}</td>
                   <td>{u.created_at || '-'}</td>
                   <td className="actions-cell">
                     <select
+                      className="admin-user-role-select"
                       value={u.role}
                       onChange={(e) => safe(() => updateUserRole(u.username, e.target.value))}
-                      disabled={u.username === 'admin' || u.auth_source !== 'local'}
+                      disabled={u.auth_source !== 'local'}
                       title={u.auth_source !== 'local' ? `${u.auth_source} user role is managed by external group mapping` : ''}
                     >
                       {managedRoles.map((r) => (
                         <option key={r.name} value={r.name}>{r.name}</option>
                       ))}
                     </select>
-                    <button onClick={() => safe(() => revokeUserSessions(u.username))}>Revoke sessions</button>
-                    {u.auth_source === 'local' ? (
-                      <button onClick={() => safe(() => resetLocalUserPassword(u.username))}>Reset password</button>
-                    ) : null}
-                    <button className="danger" onClick={() => safe(() => deleteUser(u.username))} disabled={u.username === 'admin'}>
-                      Delete
-                    </button>
+                    <ActionMenu
+                      actions={[
+                        ...(u.auth_source === 'local' ? [{
+                          label: 'Reset password',
+                          enabled: true,
+                          onClick: () => safe(() => resetLocalUserPassword(u.username))
+                        }] : []),
+                        {
+                          label: 'Delete',
+                          enabled: true,
+                          onClick: () => safe(() => deleteUser(u.username))
+                        }
+                      ]}
+                    />
                   </td>
                 </tr>
               ))}
@@ -116,7 +146,7 @@ export default function UserManagementPage({
                   </td>
                   <td className="actions-cell">
                     <button onClick={() => openEditRoleModal(r)}>Edit</button>
-                    <button className="danger" onClick={() => safe(() => deleteRole(r.name))} disabled={r.name === 'admin' || r.name === 'viewer'}>
+                    <button className="danger" onClick={() => safe(() => deleteRole(r.name))} disabled={r.name === 'admin'}>
                       Delete
                     </button>
                   </td>

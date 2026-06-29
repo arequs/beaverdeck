@@ -40,7 +40,7 @@ export function ClusterRolesPage({
                     <ActionMenu
                       actions={[
                         makeAction('Manifest', permissionInfo('clusterroles', 'view'), () => safe(() => openManifestTab(primaryNamespace, 'clusterrole', item.name))),
-                        makeAction('Edit', allAllowed(permissionInfo('clusterroles', 'edit'), permissionInfo('apply', 'edit')), () => safe(() => openEditTab(primaryNamespace, 'clusterrole', item.name))),
+                        makeAction('Edit', permissionInfo('clusterroles', 'edit'), () => safe(() => openEditTab(primaryNamespace, 'clusterrole', item.name))),
                         makeAction('Delete', permissionInfo('clusterroles', 'delete'), () => safe(async () => {
                           await deleteResourceByRef('clusterrole', '', item.name);
                           await refreshAll();
@@ -79,7 +79,7 @@ export function ClusterRolesPage({
                     <ActionMenu
                       actions={[
                         makeAction('Manifest', permissionInfo('clusterroles', 'view'), () => safe(() => openManifestTab(primaryNamespace, 'clusterrolebinding', item.name))),
-                        makeAction('Edit', allAllowed(permissionInfo('clusterroles', 'edit'), permissionInfo('apply', 'edit')), () => safe(() => openEditTab(primaryNamespace, 'clusterrolebinding', item.name))),
+                        makeAction('Edit', permissionInfo('clusterroles', 'edit'), () => safe(() => openEditTab(primaryNamespace, 'clusterrolebinding', item.name))),
                         makeAction('Delete', permissionInfo('clusterroles', 'delete'), () => safe(async () => {
                           await deleteResourceByRef('clusterrolebinding', '', item.name);
                           await refreshAll();
@@ -137,7 +137,7 @@ export function NamespacedRolesPage({
                     <ActionMenu
                       actions={[
                         makeAction('Manifest', permissionInfo('rbacroles', 'view', item.namespace), () => safe(() => openManifestTab(item.namespace, 'role', item.name))),
-                        makeAction('Edit', allAllowed(permissionInfo('rbacroles', 'edit', item.namespace), permissionInfo('apply', 'edit', item.namespace)), () => safe(() => openEditTab(item.namespace, 'role', item.name))),
+                        makeAction('Edit', permissionInfo('rbacroles', 'edit', item.namespace), () => safe(() => openEditTab(item.namespace, 'role', item.name))),
                         makeAction('Delete', permissionInfo('rbacroles', 'delete', item.namespace), () => safe(async () => {
                           await deleteResourceByRef('role', item.namespace, item.name);
                           await refreshAll();
@@ -178,7 +178,7 @@ export function NamespacedRolesPage({
                     <ActionMenu
                       actions={[
                         makeAction('Manifest', permissionInfo('rbacroles', 'view', item.namespace), () => safe(() => openManifestTab(item.namespace, 'rolebinding', item.name))),
-                        makeAction('Edit', allAllowed(permissionInfo('rbacroles', 'edit', item.namespace), permissionInfo('apply', 'edit', item.namespace)), () => safe(() => openEditTab(item.namespace, 'rolebinding', item.name))),
+                        makeAction('Edit', permissionInfo('rbacroles', 'edit', item.namespace), () => safe(() => openEditTab(item.namespace, 'rolebinding', item.name))),
                         makeAction('Delete', permissionInfo('rbacroles', 'delete', item.namespace), () => safe(async () => {
                           await deleteResourceByRef('rolebinding', item.namespace, item.name);
                           await refreshAll();
@@ -238,7 +238,7 @@ export function ServiceAccountsPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('serviceaccounts', 'view', item.namespace), () => safe(() => openManifestTab(item.namespace, 'serviceaccount', item.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('serviceaccounts', 'edit', item.namespace), permissionInfo('apply', 'edit', item.namespace)), () => safe(() => openEditTab(item.namespace, 'serviceaccount', item.name))),
+                    makeAction('Edit', permissionInfo('serviceaccounts', 'edit', item.namespace), () => safe(() => openEditTab(item.namespace, 'serviceaccount', item.name))),
                     makeAction('Delete', permissionInfo('serviceaccounts', 'delete', item.namespace), () => safe(async () => {
                       await deleteResourceByRef('serviceaccount', item.namespace, item.name);
                       await refreshAll();

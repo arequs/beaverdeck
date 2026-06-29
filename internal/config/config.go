@@ -8,33 +8,43 @@ import (
 )
 
 type Config struct {
-	ListenAddr         string
-	BasePath           string
-	AdminToken         string
-	DataDir            string
-	AppVersion         string
-	ClusterName        string
-	PodNamespace       string
-	ServiceAccountName string
-	ManagedNamespace   string
-	AllowAllNamespaces bool
-	UpdateCheckURL     string
-	UpdateCheckEvery   time.Duration
-	UpdateCheckJitter  time.Duration
+	ListenAddr                      string
+	BasePath                        string
+	DataDir                         string
+	AppVersion                      string
+	ClusterName                     string
+	PodNamespace                    string
+	ServiceAccountName              string
+	ManagedNamespace                string
+	ConfigSecretName                string
+	ConfigSecretKey                 string
+	ConfigSecretNS                  string
+	SuppressedInsightsConfigMapName string
+	SuppressedInsightsConfigMapKey  string
+	SuppressedInsightsConfigMapNS   string
+	AllowAllNamespaces              bool
+	UpdateCheckURL                  string
+	UpdateCheckEvery                time.Duration
+	UpdateCheckJitter               time.Duration
 }
 
 func FromEnv() Config {
 	cfg := Config{
-		ListenAddr:         env("LISTEN_ADDR", ":8080"),
-		BasePath:           normalizeBasePath(env("BASE_PATH", "")),
-		AdminToken:         env("ADMIN_TOKEN", ""),
-		DataDir:            env("DATA_DIR", "/data"),
-		AppVersion:         env("APP_VERSION", ""),
-		ClusterName:        env("CLUSTER_NAME", ""),
-		PodNamespace:       env("POD_NAMESPACE", "default"),
-		ServiceAccountName: env("SERVICE_ACCOUNT_NAME", "default"),
-		ManagedNamespace:   env("MANAGED_NAMESPACE", env("POD_NAMESPACE", "default")),
-		UpdateCheckURL:     env("UPDATE_CHECK_URL", "https://arequs.com/update-check"),
+		ListenAddr:                      env("LISTEN_ADDR", ":8080"),
+		BasePath:                        normalizeBasePath(env("BASE_PATH", "")),
+		DataDir:                         env("DATA_DIR", "/data"),
+		AppVersion:                      env("APP_VERSION", ""),
+		ClusterName:                     env("CLUSTER_NAME", ""),
+		PodNamespace:                    env("POD_NAMESPACE", "default"),
+		ServiceAccountName:              env("SERVICE_ACCOUNT_NAME", "default"),
+		ManagedNamespace:                env("MANAGED_NAMESPACE", env("POD_NAMESPACE", "default")),
+		ConfigSecretName:                env("CONFIG_SECRET_NAME", "beaverdeck-config"),
+		ConfigSecretKey:                 env("CONFIG_SECRET_KEY", "config.yaml"),
+		ConfigSecretNS:                  env("CONFIG_SECRET_NAMESPACE", env("POD_NAMESPACE", "default")),
+		SuppressedInsightsConfigMapName: env("SUPPRESSED_INSIGHTS_CONFIGMAP_NAME", "beaverdeck-suppressed-insights"),
+		SuppressedInsightsConfigMapKey:  env("SUPPRESSED_INSIGHTS_CONFIGMAP_KEY", "suppressed_insights.json"),
+		SuppressedInsightsConfigMapNS:   env("SUPPRESSED_INSIGHTS_CONFIGMAP_NAMESPACE", env("POD_NAMESPACE", "default")),
+		UpdateCheckURL:                  env("UPDATE_CHECK_URL", "https://arequs.com/update-check"),
 	}
 
 	allowAll, _ := strconv.ParseBool(env("ALLOW_ALL_NAMESPACES", "false"))

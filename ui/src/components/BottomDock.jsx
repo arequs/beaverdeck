@@ -1,8 +1,9 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import ActionMenu from './ActionMenu.jsx';
 import LogViewer from './LogViewer.jsx';
 import YamlViewer from './YamlViewer.jsx';
+import { kindToResource } from '../lib/appUtils.js';
 
 export default function BottomDock({
   showBottomDock,
@@ -15,6 +16,9 @@ export default function BottomDock({
   upsertTab,
   scheduleLogsScrollToBottom,
   refreshLogTab,
+  changeLogContainer,
+  refreshManifestTab,
+  revealSecretManifestTab,
   handleLogsScroll,
   logsOutputRef,
   logsEndRef,
@@ -39,6 +43,21 @@ export default function BottomDock({
   if (!showBottomDock) {
     return null;
   }
+
+  const activeManifestIsSecret = activeBottomTab?.type === 'manifest' && String(activeBottomTab?.kind || '').trim().toLowerCase() === 'secret';
+  const secretRevealPermission = activeManifestIsSecret
+    ? permissionInfo('secrets', 'edit', activeBottomTab?.namespace || primaryNamespace)
+    : { allowed: false, reason: '' };
+  const decodedSecretEntries = activeManifestIsSecret && activeBottomTab?.secretRevealed
+    ? Object.entries(activeBottomTab?.secretDecodedData || {}).sort(([a], [b]) => a.localeCompare(b))
+    : [];
+  const activeEditPermission = activeBottomTab?.type === 'edit'
+    ? permissionInfo(
+      kindToResource(activeBottomTab.kind),
+      'edit',
+      activeBottomTab.namespace || primaryNamespace
+    )
+    : { allowed: false, reason: '' };
 
   return (
     <>
@@ -73,8 +92,46 @@ export default function BottomDock({
           {activeBottomTab?.loading && <div className="dock-loading">Loading...</div>}
           {activeBottomTab?.error && <div className="dock-error">{activeBottomTab.error}</div>}
 
-          {!activeBottomTab?.loading && !activeBottomTab?.error && activeBottomTab?.type === 'manifest' && (
-            <YamlViewer text={activeBottomTab?.content || ''} />
+          {!activeBottomTab?.loading && activeBottomTab?.type === 'manifest' && (
+            <div className="edit-pane">
+              <div className="toolbar fixed-toolbar">
+                <button onClick={() => safe(() => refreshManifestTab(activeBottomTab.id))}>Refresh</button>
+                {activeManifestIsSecret && !activeBottomTab?.secretRevealed ? (
+                  <button
+                    className="warn icon-text-button"
+                    onClick={() => safe(() => revealSecretManifestTab(activeBottomTab.id))}
+                    disabled={!secretRevealPermission.allowed}
+                    title={secretRevealPermission.allowed ? 'Reveal Secret data' : secretRevealPermission.reason}
+                  >
+                    <Eye size={15} strokeWidth={1.8} aria-hidden="true" />
+                    <span>Reveal Secret</span>
+                  </button>
+                ) : null}
+                {activeManifestIsSecret && activeBottomTab?.secretRevealed ? (
+                  <span className="small-hint">Decoded values revealed</span>
+                ) : null}
+              </div>
+              <div className={`manifest-view-content ${activeManifestIsSecret && activeBottomTab?.secretRevealed ? 'with-secret-reveal' : ''}`.trim()}>
+                {activeManifestIsSecret && activeBottomTab?.secretRevealed ? (
+                  <div className="secret-reveal-panel">
+                    <div className="small-label">Decoded Secret Data</div>
+                    {decodedSecretEntries.length > 0 ? (
+                      <div className="secret-reveal-list">
+                        {decodedSecretEntries.map(([key, value]) => (
+                          <div className="secret-reveal-item" key={key}>
+                            <div className="secret-reveal-key">{key}</div>
+                            <pre>{value}</pre>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="small-hint">No data keys.</div>
+                    )}
+                  </div>
+                ) : null}
+                {!activeBottomTab?.error ? <YamlViewer text={activeBottomTab?.content || ''} /> : null}
+              </div>
+            </div>
           )}
 
           {!activeBottomTab?.loading && !activeBottomTab?.error && activeBottomTab?.type === 'logs' && (
@@ -114,6 +171,16 @@ export default function BottomDock({
                   />
                   <span>Follow tail</span>
                 </label>
+                {activeBottomTab.logKind === 'pod' && (activeBottomTab.containers || []).length > 1 ? (
+                  <select
+                    value={activeBottomTab.container || ''}
+                    onChange={(e) => safe(() => changeLogContainer(activeBottomTab.id, e.target.value))}
+                  >
+                    {(activeBottomTab.containers || []).map((container) => (
+                      <option key={container} value={container}>{container}</option>
+                    ))}
+                  </select>
+                ) : null}
                 <button onClick={() => safe(() => refreshLogTab(activeBottomTab.id, false, { forceScrollToBottom: true }))}>Refresh</button>
               </div>
               <div className="logs-output-wrap" ref={logsOutputRef} onScroll={handleLogsScroll}>
@@ -131,33 +198,36 @@ export default function BottomDock({
             </div>
           )}
 
-          {!activeBottomTab?.loading && !activeBottomTab?.error && activeBottomTab?.type === 'edit' && (
+          {!activeBottomTab?.loading && activeBottomTab?.type === 'edit' && (
             <div className="edit-pane">
               <div className="toolbar fixed-toolbar">
+                <button onClick={() => safe(() => refreshManifestTab(activeBottomTab.id))}>Reload</button>
                 <button
                   className="warn"
                   onClick={() => safe(() => applyEditTab(activeBottomTab.id, true))}
-                  disabled={!permissionInfo('apply', 'edit', activeBottomTab?.namespace || primaryNamespace).allowed}
-                  title={permissionInfo('apply', 'edit', activeBottomTab?.namespace || primaryNamespace).reason}
+                  disabled={!activeEditPermission.allowed}
+                  title={activeEditPermission.reason}
                 >
                   Dry-run
                 </button>
                 <button
                   onClick={() => safe(() => applyEditTab(activeBottomTab.id, false))}
-                  disabled={!permissionInfo('apply', 'edit', activeBottomTab?.namespace || primaryNamespace).allowed}
-                  title={permissionInfo('apply', 'edit', activeBottomTab?.namespace || primaryNamespace).reason}
+                  disabled={!activeEditPermission.allowed}
+                  title={activeEditPermission.reason}
                 >
                   Apply
                 </button>
               </div>
-              <textarea
-                className="code-textarea"
-                rows={14}
-                value={activeBottomTab.content || ''}
-                onChange={(e) => {
-                  upsertTab({ id: activeBottomTab.id, content: e.target.value }, false);
-                }}
-              />
+              {!activeBottomTab?.error ? (
+                <textarea
+                  className="code-textarea"
+                  rows={14}
+                  value={activeBottomTab.content || ''}
+                  onChange={(e) => {
+                    upsertTab({ id: activeBottomTab.id, content: e.target.value }, false);
+                  }}
+                />
+              ) : null}
             </div>
           )}
 
@@ -193,7 +263,7 @@ export default function BottomDock({
                           <ActionMenu
                             actions={[
                               makeAction('Manifest', permissionInfo('pods', 'view', pod.namespace), () => safe(() => openManifestTab(pod.namespace, 'pod', pod.name))),
-                              makeAction('Logs', permissionInfo('pods', 'view', pod.namespace), () => safe(() => openPodLogsTab(pod.namespace, pod.name))),
+                              makeAction('Logs', permissionInfo('pods', 'view', pod.namespace), () => safe(() => openPodLogsTab(pod.namespace, pod.name, '', pod.containers))),
                               makeAction(
                                 'Evict',
                                 permissionInfo('pods', 'edit', pod.namespace),
@@ -219,7 +289,7 @@ export default function BottomDock({
                                         ? permissionInfo('exec', 'edit', pod.namespace).reason
                                         : 'Exec is only available for ready running pods'
                                 },
-                                () => safe(() => openPodExecTab(pod.namespace, pod.name))
+                                () => safe(() => openPodExecTab(pod.namespace, pod.name, '', pod.containers))
                               ),
                               makeAction(
                                 'Delete',
@@ -249,8 +319,26 @@ export default function BottomDock({
           )}
 
           {!activeBottomTab?.loading && activeBottomTab?.type === 'exec' && (
-            <div className="exec-pane">
+            <div className={`exec-pane ${(activeBottomTab.containers || []).length > 1 ? 'exec-pane-with-toolbar' : ''}`.trim()}>
               {activeBottomTab?.error ? <div className="dock-error">{activeBottomTab.error}</div> : null}
+              {(activeBottomTab.containers || []).length > 1 ? (
+                <div className="toolbar fixed-toolbar">
+                  <span className="small-hint">Container</span>
+                  <select
+                    value={activeBottomTab.container || ''}
+                    onChange={(e) => safe(() => openPodExecTab(
+                      activeBottomTab.namespace,
+                      activeBottomTab.pod,
+                      e.target.value,
+                      activeBottomTab.containers
+                    ))}
+                  >
+                    {(activeBottomTab.containers || []).map((container) => (
+                      <option key={container} value={container}>{container}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="exec-status">
                 {activeBottomTab.connected ? 'Connected' : 'Disconnected'} · {activeBottomTab.connected ? 'Use Tab / arrows / Ctrl+C directly in terminal' : 'Terminal is read-only until exec shell starts successfully'}
               </div>

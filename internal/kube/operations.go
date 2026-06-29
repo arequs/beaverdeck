@@ -116,6 +116,10 @@ func (c *Client) ListServiceAccounts(ctx context.Context, ns string) ([]ServiceA
 }
 
 func (c *Client) PodLogs(ctx context.Context, ns, pod, container string, tail int64) (string, error) {
+	container, err := c.defaultPodContainer(ctx, ns, pod, container)
+	if err != nil {
+		return "", err
+	}
 	req := c.core.CoreV1().Pods(ns).GetLogs(pod, &corev1.PodLogOptions{Container: container, TailLines: &tail})
 	b, err := req.DoRaw(ctx)
 	if err != nil {
@@ -125,8 +129,27 @@ func (c *Client) PodLogs(ctx context.Context, ns, pod, container string, tail in
 }
 
 func (c *Client) FollowPodLogs(ctx context.Context, ns, pod, container string, tail int64) (io.ReadCloser, error) {
+	container, err := c.defaultPodContainer(ctx, ns, pod, container)
+	if err != nil {
+		return nil, err
+	}
 	req := c.core.CoreV1().Pods(ns).GetLogs(pod, &corev1.PodLogOptions{Container: container, TailLines: &tail, Follow: true})
 	return req.Stream(ctx)
+}
+
+func (c *Client) defaultPodContainer(ctx context.Context, ns, pod, container string) (string, error) {
+	container = strings.TrimSpace(container)
+	if container != "" {
+		return container, nil
+	}
+	obj, err := c.core.CoreV1().Pods(ns).Get(ctx, pod, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	if len(obj.Spec.Containers) == 0 {
+		return "", nil
+	}
+	return obj.Spec.Containers[0].Name, nil
 }
 
 func (c *Client) WorkloadLogs(ctx context.Context, ns, kind, name string, tail int64) (string, error) {
@@ -248,6 +271,10 @@ func (c *Client) ExecWithSizeQueue(ctx context.Context, ns, pod, container strin
 }
 
 func (c *Client) execWithTTY(ctx context.Context, ns, pod, container string, command []string, stdin io.Reader, stdout, stderr io.Writer, tty bool, sizeQueue remotecommand.TerminalSizeQueue) error {
+	container, err := c.defaultPodContainer(ctx, ns, pod, container)
+	if err != nil {
+		return err
+	}
 	req := c.core.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(pod).
@@ -660,6 +687,93 @@ func (c *Client) ApplyYAML(ctx context.Context, namespace, docs, fieldManager st
 	return results, nil
 }
 
+func (c *Client) UpdateManifestYAML(ctx context.Context, namespace, kind, name, doc string, dryRun bool) (ApplyResult, error) {
+	obj, err := singleManifestObject(doc)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+
+	gvk := obj.GroupVersionKind()
+	if gvk.Empty() {
+		return ApplyResult{}, fmt.Errorf("object missing apiVersion/kind")
+	}
+	if !strings.EqualFold(gvk.Kind, strings.TrimSpace(kind)) {
+		return ApplyResult{}, fmt.Errorf("manifest kind %q does not match %q", gvk.Kind, kind)
+	}
+	if obj.GetName() != strings.TrimSpace(name) {
+		return ApplyResult{}, fmt.Errorf("manifest name %q does not match %q", obj.GetName(), name)
+	}
+
+	mapping, err := c.mapper.RESTMapping(schema.GroupKind{Group: gvk.Group, Kind: gvk.Kind}, gvk.Version)
+	if err != nil {
+		c.discovery.Invalidate()
+		mapping, err = c.mapper.RESTMapping(schema.GroupKind{Group: gvk.Group, Kind: gvk.Kind}, gvk.Version)
+		if err != nil {
+			return ApplyResult{}, fmt.Errorf("rest mapping for %s: %w", gvk.String(), err)
+		}
+	}
+
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		if obj.GetNamespace() == "" {
+			obj.SetNamespace(namespace)
+		}
+		if obj.GetNamespace() != namespace {
+			return ApplyResult{}, fmt.Errorf("manifest namespace %q does not match %q", obj.GetNamespace(), namespace)
+		}
+	}
+
+	rcNS := c.dyn.Resource(mapping.Resource)
+	var rc interface {
+		Update(context.Context, *unstructured.Unstructured, metav1.UpdateOptions, ...string) (*unstructured.Unstructured, error)
+	} = rcNS
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		rc = rcNS.Namespace(obj.GetNamespace())
+	}
+
+	opts := metav1.UpdateOptions{}
+	if dryRun {
+		opts.DryRun = []string{metav1.DryRunAll}
+	}
+
+	updated, err := rc.Update(ctx, obj, opts)
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("update %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	}
+
+	return ApplyResult{
+		APIVersion: updated.GetAPIVersion(),
+		Kind:       updated.GetKind(),
+		Namespace:  updated.GetNamespace(),
+		Name:       updated.GetName(),
+	}, nil
+}
+
+func singleManifestObject(doc string) (*unstructured.Unstructured, error) {
+	decoder := k8syaml.NewYAMLOrJSONDecoder(strings.NewReader(doc), 4096)
+	var obj *unstructured.Unstructured
+	for {
+		var raw map[string]interface{}
+		err := decoder.Decode(&raw)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("decode yaml: %w", err)
+		}
+		if len(raw) == 0 {
+			continue
+		}
+		if obj != nil {
+			return nil, fmt.Errorf("edit manifest supports exactly one object")
+		}
+		obj = &unstructured.Unstructured{Object: raw}
+	}
+	if obj == nil {
+		return nil, fmt.Errorf("manifest is empty")
+	}
+	return obj, nil
+}
+
 func (c *Client) GetManifestYAML(ctx context.Context, namespace, kind, name string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod":
@@ -789,6 +903,18 @@ func (c *Client) GetManifestYAML(ctx context.Context, namespace, kind, name stri
 	default:
 		return "", fmt.Errorf("unsupported kind: %s", kind)
 	}
+}
+
+func (c *Client) GetSecretDecodedData(ctx context.Context, namespace, name string) (map[string]string, error) {
+	secret, err := c.core.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(secret.Data))
+	for key, value := range secret.Data {
+		out[key] = string(value)
+	}
+	return out, nil
 }
 
 func objectToYAML(obj any) (string, error) {

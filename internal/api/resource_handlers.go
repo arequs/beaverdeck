@@ -227,14 +227,14 @@ func (s *Server) insights(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	suppressedRows, err := s.audit.ListSuppressedAlerts(r.Context())
+	suppressedKeys, err := s.kube.ListSuppressedInsights(r.Context(), s.suppressedInsightsRef())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	suppressedMap := make(map[string]struct{}, len(suppressedRows))
-	for _, item := range suppressedRows {
-		suppressedMap[item.Key] = struct{}{}
+	suppressedMap := make(map[string]struct{}, len(suppressedKeys))
+	for _, key := range suppressedKeys {
+		suppressedMap[key] = struct{}{}
 	}
 
 	out := make([]kube.InsightAlert, 0, len(items))
@@ -287,11 +287,19 @@ func (s *Server) setInsightSuppressed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.audit.SetAlertSuppressed(r.Context(), strings.TrimSpace(req.Key), req.Suppressed); err != nil {
+	if err := s.kube.SetInsightSuppressed(r.Context(), s.suppressedInsightsRef(), strings.TrimSpace(req.Key), req.Suppressed); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) suppressedInsightsRef() kube.SuppressedInsightsRef {
+	return kube.SuppressedInsightsRef{
+		Namespace: s.cfg.SuppressedInsightsConfigMapNS,
+		Name:      s.cfg.SuppressedInsightsConfigMapName,
+		Key:       s.cfg.SuppressedInsightsConfigMapKey,
+	}
 }
 
 func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
@@ -314,8 +322,11 @@ func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePermission(w, r, resource, "view") {
 		return
 	}
-	if s.isViewer(r) && resource == "secrets" {
-		writeErr(w, http.StatusForbidden, fmt.Errorf("viewer cannot view secret content"))
+
+	revealSecret := resource == "secrets" &&
+		(strings.EqualFold(r.URL.Query().Get("reveal"), "1") ||
+			strings.EqualFold(r.URL.Query().Get("reveal"), "true"))
+	if revealSecret && !s.requirePermission(w, r, "secrets", "edit") {
 		return
 	}
 
@@ -324,7 +335,17 @@ func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"namespace": ns, "kind": kind, "name": name, "yaml": text})
+	response := map[string]any{"namespace": ns, "kind": kind, "name": name, "yaml": text, "revealed": false}
+	if revealSecret {
+		decoded, err := s.kube.GetSecretDecodedData(r.Context(), ns, name)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		response["revealed"] = true
+		response["decoded_data"] = decoded
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) podLogs(w http.ResponseWriter, r *http.Request) {
@@ -408,19 +429,6 @@ func (s *Server) workloadLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(text))
-}
-
-func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
-	if !s.requirePermission(w, r, "audit", "view") {
-		return
-	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	items, err := s.audit.List(r.Context(), limit)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) namespaceFromQuery(r *http.Request) (string, bool) {

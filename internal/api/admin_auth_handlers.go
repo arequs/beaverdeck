@@ -262,26 +262,6 @@ func (s *Server) adminOIDCMappingsDelete(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func (s *Server) adminUsersRevokeSessions(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	var req revokeSessionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := s.users.InvalidateUserSessions(r.Context(), req.Username); err != nil {
-		if err == sql.ErrNoRows {
-			writeErr(w, http.StatusNotFound, err)
-			return
-		}
-		writeErr(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
-}
-
 func (s *Server) adminUsersResetPassword(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return

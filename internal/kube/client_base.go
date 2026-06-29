@@ -67,30 +67,31 @@ type ServiceAccountInfo struct {
 }
 
 type PodInfo struct {
-	Namespace           string `json:"namespace"`
-	Name                string `json:"name"`
-	Phase               string `json:"phase"`
-	Ready               string `json:"ready"`
-	Restarts            int32  `json:"restarts"`
-	Age                 string `json:"age"`
-	Node                string `json:"node"`
-	MetricsAvailable    bool   `json:"metrics_available"`
-	CPU                 string `json:"cpu"`
-	CPUUsedMilli        int64  `json:"cpu_used_milli"`
-	CPURequestMilli     int64  `json:"cpu_request_milli"`
-	CPULimitMilli       int64  `json:"cpu_limit_milli"`
-	CPUTotalMilli       int64  `json:"cpu_total_milli"`
-	Memory              string `json:"memory"`
-	MemoryUsedBytes     int64  `json:"memory_used_bytes"`
-	MemoryRequestBytes  int64  `json:"memory_request_bytes"`
-	MemoryLimitBytes    int64  `json:"memory_limit_bytes"`
-	MemoryTotalBytes    int64  `json:"memory_total_bytes"`
-	GPU                 string `json:"gpu"`
-	GPUMetricsAvailable bool   `json:"gpu_metrics_available"`
-	GPUUsedPercent      int64  `json:"gpu_used_percent"`
-	GPUMemoryUsedBytes  int64  `json:"gpu_memory_used_bytes"`
-	GPURequestCount     int64  `json:"gpu_request_count"`
-	GPUDeviceCount      int64  `json:"gpu_device_count"`
+	Namespace           string   `json:"namespace"`
+	Name                string   `json:"name"`
+	Phase               string   `json:"phase"`
+	Ready               string   `json:"ready"`
+	Restarts            int32    `json:"restarts"`
+	Age                 string   `json:"age"`
+	Node                string   `json:"node"`
+	Containers          []string `json:"containers"`
+	MetricsAvailable    bool     `json:"metrics_available"`
+	CPU                 string   `json:"cpu"`
+	CPUUsedMilli        int64    `json:"cpu_used_milli"`
+	CPURequestMilli     int64    `json:"cpu_request_milli"`
+	CPULimitMilli       int64    `json:"cpu_limit_milli"`
+	CPUTotalMilli       int64    `json:"cpu_total_milli"`
+	Memory              string   `json:"memory"`
+	MemoryUsedBytes     int64    `json:"memory_used_bytes"`
+	MemoryRequestBytes  int64    `json:"memory_request_bytes"`
+	MemoryLimitBytes    int64    `json:"memory_limit_bytes"`
+	MemoryTotalBytes    int64    `json:"memory_total_bytes"`
+	GPU                 string   `json:"gpu"`
+	GPUMetricsAvailable bool     `json:"gpu_metrics_available"`
+	GPUUsedPercent      int64    `json:"gpu_used_percent"`
+	GPUMemoryUsedBytes  int64    `json:"gpu_memory_used_bytes"`
+	GPURequestCount     int64    `json:"gpu_request_count"`
+	GPUDeviceCount      int64    `json:"gpu_device_count"`
 }
 
 type EventInfo struct {

@@ -51,7 +51,7 @@ export function ServicesPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('services', 'view', s.namespace), () => safe(() => openManifestTab(s.namespace, 'service', s.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('services', 'edit', s.namespace), permissionInfo('apply', 'edit', s.namespace)), () => safe(() => openEditTab(s.namespace, 'service', s.name))),
+                    makeAction('Edit', permissionInfo('services', 'edit', s.namespace), () => safe(() => openEditTab(s.namespace, 'service', s.name))),
                     makeAction('Delete', permissionInfo('services', 'delete', s.namespace), () => safe(async () => {
                       await deleteResourceByRef('service', s.namespace, s.name);
                       await refreshAll();
@@ -114,7 +114,7 @@ export function IngressesPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('ingresses', 'view', i.namespace), () => safe(() => openManifestTab(i.namespace, 'ingress', i.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('ingresses', 'edit', i.namespace), permissionInfo('apply', 'edit', i.namespace)), () => safe(() => openEditTab(i.namespace, 'ingress', i.name))),
+                    makeAction('Edit', permissionInfo('ingresses', 'edit', i.namespace), () => safe(() => openEditTab(i.namespace, 'ingress', i.name))),
                     makeAction('Delete', permissionInfo('ingresses', 'delete', i.namespace), () => safe(async () => {
                       await deleteResourceByRef('ingress', i.namespace, i.name);
                       await refreshAll();
@@ -173,7 +173,7 @@ export function ConfigMapsPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('configmaps', 'view', c.namespace), () => safe(() => openManifestTab(c.namespace, 'configmap', c.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('configmaps', 'edit', c.namespace), permissionInfo('apply', 'edit', c.namespace)), () => safe(() => openEditTab(c.namespace, 'configmap', c.name))),
+                    makeAction('Edit', permissionInfo('configmaps', 'edit', c.namespace), () => safe(() => openEditTab(c.namespace, 'configmap', c.name))),
                     makeAction('Delete', permissionInfo('configmaps', 'delete', c.namespace), () => safe(async () => {
                       await deleteResourceByRef('configmap', c.namespace, c.name);
                       await refreshAll();
@@ -237,7 +237,7 @@ export function CRDsPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('crds', 'view'), () => safe(() => openManifestTab(primaryNamespace, 'crd', crd.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('crds', 'edit'), permissionInfo('apply', 'edit')), () => safe(() => openEditTab(primaryNamespace, 'crd', crd.name))),
+                    makeAction('Edit', permissionInfo('crds', 'edit'), () => safe(() => openEditTab(primaryNamespace, 'crd', crd.name))),
                     makeAction('Delete', permissionInfo('crds', 'delete'), () => safe(async () => {
                       await deleteResourceByRef('crd', '', crd.name);
                       await refreshAll();
@@ -300,13 +300,10 @@ export function SecretsPage({
                   actions={[
                     makeAction(
                       'Manifest',
-                      allAllowed(
-                        permissionInfo('secrets', 'view', s.namespace),
-                        currentUser.roleMode === 'viewer' ? { allowed: false, reason: 'Viewer cannot open secret content' } : { allowed: true, reason: '' }
-                      ),
+                      permissionInfo('secrets', 'view', s.namespace),
                       () => safe(() => openManifestTab(s.namespace, 'secret', s.name))
                     ),
-                    makeAction('Edit', allAllowed(permissionInfo('secrets', 'edit', s.namespace), permissionInfo('apply', 'edit', s.namespace)), () => safe(() => openEditTab(s.namespace, 'secret', s.name))),
+                    makeAction('Edit', permissionInfo('secrets', 'edit', s.namespace), () => safe(() => openEditTab(s.namespace, 'secret', s.name))),
                     makeAction('Delete', permissionInfo('secrets', 'delete', s.namespace), () => safe(async () => {
                       await deleteResourceByRef('secret', s.namespace, s.name);
                       await refreshAll();
@@ -380,7 +377,7 @@ export function PVCsPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('pvcs', 'view', p.namespace), () => safe(() => openManifestTab(p.namespace, 'pvc', p.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('pvcs', 'edit', p.namespace), permissionInfo('apply', 'edit', p.namespace)), () => safe(() => openEditTab(p.namespace, 'pvc', p.name))),
+                    makeAction('Edit', permissionInfo('pvcs', 'edit', p.namespace), () => safe(() => openEditTab(p.namespace, 'pvc', p.name))),
                     makeAction('Delete', permissionInfo('pvcs', 'delete', p.namespace), () => safe(async () => {
                       await deleteResourceByRef('pvc', p.namespace, p.name);
                       await refreshAll();
@@ -453,7 +450,7 @@ export function PVsPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('pvs', 'view'), () => safe(() => openManifestTab(primaryNamespace, 'pv', p.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('pvs', 'edit'), permissionInfo('apply', 'edit')), () => safe(() => openEditTab(primaryNamespace, 'pv', p.name))),
+                    makeAction('Edit', permissionInfo('pvs', 'edit'), () => safe(() => openEditTab(primaryNamespace, 'pv', p.name))),
                     makeAction('Delete', permissionInfo('pvs', 'delete'), () => safe(async () => {
                       await deleteResourceByRef('pv', '', p.name);
                       await refreshAll();
@@ -511,7 +508,7 @@ export function StorageClassesPage({
                 <ActionMenu
                   actions={[
                     makeAction('Manifest', permissionInfo('storageclasses', 'view'), () => safe(() => openManifestTab(primaryNamespace, 'storageclass', sc.name))),
-                    makeAction('Edit', allAllowed(permissionInfo('storageclasses', 'edit'), permissionInfo('apply', 'edit')), () => safe(() => openEditTab(primaryNamespace, 'storageclass', sc.name))),
+                    makeAction('Edit', permissionInfo('storageclasses', 'edit'), () => safe(() => openEditTab(primaryNamespace, 'storageclass', sc.name))),
                     makeAction('Delete', permissionInfo('storageclasses', 'delete'), () => safe(async () => {
                       await deleteResourceByRef('storageclass', '', sc.name);
                       await refreshAll();

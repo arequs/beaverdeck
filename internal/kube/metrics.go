@@ -35,15 +35,58 @@ func (c *Client) collectPodUsageMetrics(ctx context.Context, ns string) (map[str
 	return filtered, directAvailable
 }
 
-func (c *Client) collectAllPodUsageMetrics(ctx context.Context) (map[string]usageValues, bool) {
-	usageByPod, metricsAvailable := c.collectAllPodUsageMetricsFromMetricsAPI(ctx)
+func (c *Client) collectPodUsageMetricsForNamespaces(ctx context.Context, namespaces []string, nodes []corev1.Node) (map[string]usageValues, bool) {
+	nsList := uniqueStrings(namespaces)
+	if len(nsList) == 0 {
+		return map[string]usageValues{}, false
+	}
+	usageByPod := make(map[string]usageValues)
+	metricsAvailable := true
+	for _, ns := range nsList {
+		namespaceUsage, ok := c.collectPodUsageMetricsFromMetricsAPI(ctx, ns)
+		if !ok {
+			metricsAvailable = false
+			break
+		}
+		for podName, usage := range namespaceUsage {
+			usageByPod[ns+"/"+podName] = usage
+		}
+	}
 	if metricsAvailable {
 		return usageByPod, true
 	}
-	return c.collectAllPodUsageMetricsFromKubelet(ctx)
+	if c.rest == nil {
+		return map[string]usageValues{}, false
+	}
+	if len(nodes) == 0 {
+		return c.collectAllPodUsageMetricsFromKubelet(ctx)
+	}
+	allUsage, directAvailable := c.collectAllPodUsageMetricsFromKubeletForNodes(ctx, nodes)
+	return filterUsageByNamespaces(allUsage, nsList), directAvailable
+}
+
+func filterUsageByNamespaces(usageByPod map[string]usageValues, namespaces []string) map[string]usageValues {
+	nsSet := make(map[string]struct{}, len(namespaces))
+	for _, ns := range namespaces {
+		nsSet[ns] = struct{}{}
+	}
+	filtered := make(map[string]usageValues)
+	for key, usage := range usageByPod {
+		ns, _, found := strings.Cut(key, "/")
+		if !found {
+			continue
+		}
+		if _, ok := nsSet[ns]; ok {
+			filtered[key] = usage
+		}
+	}
+	return filtered
 }
 
 func (c *Client) collectPodUsageMetricsFromMetricsAPI(ctx context.Context, ns string) (map[string]usageValues, bool) {
+	if c.dyn == nil {
+		return map[string]usageValues{}, false
+	}
 	podMetrics, err := c.dyn.Resource(schema.GroupVersionResource{
 		Group:    "metrics.k8s.io",
 		Version:  "v1beta1",
@@ -55,27 +98,6 @@ func (c *Client) collectPodUsageMetricsFromMetricsAPI(ctx context.Context, ns st
 	usageByPod := make(map[string]usageValues, len(podMetrics.Items))
 	for _, item := range podMetrics.Items {
 		usageByPod[item.GetName()] = usageValuesFromMetricsAPI(item.Object)
-	}
-	return usageByPod, true
-}
-
-func (c *Client) collectAllPodUsageMetricsFromMetricsAPI(ctx context.Context) (map[string]usageValues, bool) {
-	podMetrics, err := c.dyn.Resource(schema.GroupVersionResource{
-		Group:    "metrics.k8s.io",
-		Version:  "v1beta1",
-		Resource: "pods",
-	}).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil || podMetrics == nil {
-		return map[string]usageValues{}, false
-	}
-	usageByPod := make(map[string]usageValues, len(podMetrics.Items))
-	for _, item := range podMetrics.Items {
-		ns := strings.TrimSpace(item.GetNamespace())
-		name := strings.TrimSpace(item.GetName())
-		if ns == "" || name == "" {
-			continue
-		}
-		usageByPod[ns+"/"+name] = usageValuesFromMetricsAPI(item.Object)
 	}
 	return usageByPod, true
 }
@@ -115,13 +137,20 @@ func (c *Client) collectAllPodUsageMetricsFromKubelet(ctx context.Context) (map[
 	if err != nil {
 		return map[string]usageValues{}, false
 	}
+	return c.collectAllPodUsageMetricsFromKubeletForNodes(ctx, nodes.Items)
+}
+
+func (c *Client) collectAllPodUsageMetricsFromKubeletForNodes(ctx context.Context, nodes []corev1.Node) (map[string]usageValues, bool) {
+	if c.rest == nil {
+		return map[string]usageValues{}, false
+	}
 	restClient := c.core.CoreV1().RESTClient()
 	now := time.Now()
 	usageByPod := make(map[string]usageValues)
 	seenPods := make(map[string]struct{})
 	directAvailable := false
 
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		scrape, ok := c.scrapeNodeResourceMetrics(ctx, restClient, node.Name)
 		if !ok {
 			continue
@@ -156,6 +185,9 @@ func (c *Client) collectNodeUsageMetrics(ctx context.Context) (map[string]usageV
 }
 
 func (c *Client) collectNodeUsageMetricsFromMetricsAPI(ctx context.Context) (map[string]usageValues, bool) {
+	if c.dyn == nil {
+		return map[string]usageValues{}, false
+	}
 	nodeMetrics, err := c.dyn.Resource(schema.GroupVersionResource{
 		Group:    "metrics.k8s.io",
 		Version:  "v1beta1",
@@ -190,13 +222,20 @@ func (c *Client) collectNodeUsageMetricsFromKubelet(ctx context.Context) (map[st
 	if err != nil {
 		return map[string]usageValues{}, false
 	}
+	return c.collectNodeUsageMetricsFromKubeletForNodes(ctx, nodes.Items)
+}
+
+func (c *Client) collectNodeUsageMetricsFromKubeletForNodes(ctx context.Context, nodes []corev1.Node) (map[string]usageValues, bool) {
+	if c.rest == nil {
+		return map[string]usageValues{}, false
+	}
 	restClient := c.core.CoreV1().RESTClient()
 	now := time.Now()
-	usageByNode := make(map[string]usageValues, len(nodes.Items))
-	seenNodes := make(map[string]struct{}, len(nodes.Items))
+	usageByNode := make(map[string]usageValues, len(nodes))
+	seenNodes := make(map[string]struct{}, len(nodes))
 	directAvailable := false
 
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		scrape, ok := c.scrapeNodeResourceMetrics(ctx, restClient, node.Name)
 		if !ok {
 			continue
@@ -405,11 +444,11 @@ func (c *Client) pruneResourceMetricsCache(now time.Time, seenPods, seenNodes ma
 	}
 }
 
-func (c *Client) resourceMetricsStatus(ctx context.Context) resourceMetricsStatus {
+func (c *Client) resourceMetricsStatusForNodes(ctx context.Context, nodes []corev1.Node) resourceMetricsStatus {
 	if _, ok := c.collectNodeUsageMetricsFromMetricsAPI(ctx); ok {
 		return resourceMetricsStatus{metricsServerAvailable: true, directAvailable: true}
 	}
-	_, directAvailable := c.collectNodeUsageMetricsFromKubelet(ctx)
+	_, directAvailable := c.collectNodeUsageMetricsFromKubeletForNodes(ctx, nodes)
 	return resourceMetricsStatus{metricsServerAvailable: false, directAvailable: directAvailable}
 }
 

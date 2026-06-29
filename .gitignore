@@ -28,3 +28,9 @@ beaver.yaml
 deploy.sh
 .helm-repo/
 artifacthub-repo.yml
+
+# Local Codex project memory
+/AGENTS.md
+/docs/PROJECT_CONTEXT.md
+/docs/DECISIONS.md
+/docs/CHANGELOG_AI.md

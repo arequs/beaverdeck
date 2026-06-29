@@ -40,14 +40,16 @@ export const MENU = [
     ]
   },
   {
-    section: 'Audit',
+    section: 'Insights',
     items: [
       { id: 'insights-nodes', label: 'Node Insights' },
       { id: 'insights-workloads', label: 'Workload Insights' },
+      { id: 'insights-gpu', label: 'GPU Insights' },
       { id: 'insights-networking', label: 'Network Insights' },
       { id: 'insights-storage', label: 'Storage Insights' },
-      { id: 'cluster-health', label: 'Cluster Health' },
-      { id: 'audit', label: 'Audit' }
+      { id: 'insights-security', label: 'Security Insights' },
+      { id: 'insights-configuration', label: 'Configuration Insights' },
+      { id: 'cluster-health', label: 'Cluster Health' }
     ]
   },
   {
@@ -59,7 +61,6 @@ export const MENU = [
   }
 ];
 
-export const AUTH_STORAGE_KEY = 'beaverdeck-auth';
 export const NAMESPACE_STORAGE_KEY = 'beaverdeck-selected-namespaces';
 export const THEME_STORAGE_PREFIX = 'beaverdeck-theme:';
 export const THEME_OPTIONS = [
@@ -72,9 +73,13 @@ export const INSIGHT_NAV_CATEGORIES = {
   insights: { value: 'nodes', label: 'Nodes' },
   'insights-nodes': { value: 'nodes', label: 'Nodes' },
   'insights-workloads': { value: 'workloads', label: 'Workloads' },
-  'insights-networking': { value: 'networking', label: 'Networking' },
-  'insights-storage': { value: 'storage', label: 'Storage' }
+  'insights-gpu': { value: 'gpu', label: 'GPU' },
+  'insights-networking': { value: 'networking', label: 'Network' },
+  'insights-storage': { value: 'storage', label: 'Storage' },
+  'insights-security': { value: 'security', label: 'Security' },
+  'insights-configuration': { value: 'configuration', label: 'Configuration' }
 };
+export const INSIGHT_NAV_IDS = Object.keys(INSIGHT_NAV_CATEGORIES);
 
 export const SORT_DEFAULTS = {
   pods: { key: 'name', dir: 'asc' },
@@ -95,9 +100,9 @@ export const SORT_DEFAULTS = {
   storageclasses: { key: 'name', dir: 'asc' }
 };
 
-export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply', 'audit', 'users', 'roles'];
+export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply', 'users', 'roles'];
 export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'crds', 'pvs', 'storageclasses']);
-export const BOTTOM_DOCK_HIDDEN_NAVS = new Set(['insights', 'insights-nodes', 'insights-workloads', 'insights-networking', 'insights-storage', 'cluster-health', 'audit', 'user-management', 'apply']);
+export const BOTTOM_DOCK_HIDDEN_NAVS = new Set([...INSIGHT_NAV_IDS, 'cluster-health', 'user-management', 'apply']);
 export const DOCK_TOP_RATIO_DEFAULT = 0.62;
 export const DOCK_TOP_RATIO_MIN = 0.3;
 export const DOCK_TOP_RATIO_MAX = 0.8;
@@ -107,11 +112,7 @@ export const NAV_RESOURCE = {
   workloads: 'workloads',
   nodes: 'nodes',
   events: 'events',
-  insights: 'insights',
-  'insights-nodes': 'insights',
-  'insights-workloads': 'insights',
-  'insights-networking': 'insights',
-  'insights-storage': 'insights',
+  ...Object.fromEntries(INSIGHT_NAV_IDS.map((id) => [id, 'insights'])),
   services: 'services',
   clusterroles: 'clusterroles',
   rbacroles: 'rbacroles',
@@ -123,8 +124,7 @@ export const NAV_RESOURCE = {
   pvcs: 'pvcs',
   pvs: 'pvs',
   storageclasses: 'storageclasses',
-  apply: 'apply',
-  audit: 'audit'
+  apply: 'apply'
 };
 
 export const ROLE_RESOURCE_OPTIONS = {
@@ -189,9 +189,9 @@ export const ROLE_RESOURCE_OPTIONS = {
   ],
   secrets: [
     { value: 'none', label: 'No access', hint: 'Cannot view Secrets.' },
-    { value: 'view', label: 'View secret list', hint: 'Can view Secrets list; secret content may still be restricted.' },
-    { value: 'edit', label: 'Manage Secrets', hint: 'Can edit Secrets.' },
-    { value: 'full', label: 'Full secret access', hint: 'Can view, edit and delete Secrets.' }
+    { value: 'view', label: 'List Secrets', hint: 'Can view Secret metadata and base64 manifests.' },
+    { value: 'edit', label: 'Reveal and manage Secrets', hint: 'Can reveal Secret data and edit Secret manifests.' },
+    { value: 'full', label: 'Full secret access', hint: 'Can reveal, edit and delete Secrets.' }
   ],
   pvcs: [
     { value: 'none', label: 'No access', hint: 'Cannot view PVCs.' },
@@ -227,10 +227,6 @@ export const ROLE_RESOURCE_OPTIONS = {
   apply: [
     { value: 'none', label: 'No access', hint: 'Cannot use Apply YAML.' },
     { value: 'edit', label: 'Apply YAML', hint: 'Can dry-run and apply manifests.' }
-  ],
-  audit: [
-    { value: 'none', label: 'No access', hint: 'Cannot view audit log.' },
-    { value: 'view', label: 'View audit', hint: 'Can open the audit log.' }
   ],
   users: [
     { value: 'none', label: 'No access', hint: 'Cannot view users.' },

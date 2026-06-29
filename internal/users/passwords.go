@@ -35,6 +35,10 @@ func hashLocalPassword(password string) (string, error) {
 	), nil
 }
 
+func HashLocalPassword(password string) (string, error) {
+	return hashLocalPassword(password)
+}
+
 func verifyLocalPassword(storedValue, password string) (matched bool, needsUpgrade bool, err error) {
 	password = strings.TrimSpace(password)
 	if strings.TrimSpace(storedValue) == "" || password == "" {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Boxes, Check, RefreshCw, UserRound } from 'lucide-react';
+import { Boxes, Check, ChevronDown, ChevronRight, RefreshCw, UserRound } from 'lucide-react';
 import { withBasePath } from '../lib/paths.js';
 import { GoogleIcon, OAuthIcon } from './AuthIcons.jsx';
 import PasswordField from './PasswordField.jsx';
@@ -72,8 +72,8 @@ export function LoginScreen({
 }
 
 export function BootstrapSetupScreen({
-  bootstrapTokenInput,
-  setBootstrapTokenInput,
+  adminUsername,
+  setAdminUsername,
   adminPassword,
   setAdminPassword,
   adminPasswordConfirm,
@@ -90,12 +90,12 @@ export function BootstrapSetupScreen({
           <div className="login-brand-name">BeaverDeck</div>
         </div>
         <h1>BeaverDeck Initialization</h1>
-        <p>Enter the bootstrap token from the application log, then set the admin password.</p>
+        <p>Set the initial admin username and password.</p>
         <input
           type="text"
-          value={bootstrapTokenInput}
-          onChange={(e) => setBootstrapTokenInput(e.target.value)}
-          placeholder="Bootstrap token"
+          value={adminUsername}
+          onChange={(e) => setAdminUsername(e.target.value)}
+          placeholder="Admin username"
           onKeyDown={(e) => {
             if (e.key === 'Enter') onComplete();
           }}
@@ -132,6 +132,8 @@ export function SidebarNav({
   setSelectedNamespaces,
   toggleNamespace,
   visibleMenu,
+  expandedNavSections,
+  toggleNavSection,
   handleNavChange
 }) {
   const allNamespacesRef = useRef(null);
@@ -181,20 +183,35 @@ export function SidebarNav({
       </div>
 
       <div className="nav-section-title">Navigation</div>
-      {visibleMenu.map((group) => (
-        <div key={group.section} className="menu-group">
-          <div className="menu-group-title">{group.section}</div>
-          {group.items.map((item) => (
+      {visibleMenu.map((group) => {
+        const expanded = expandedNavSections?.has(group.section);
+        return (
+          <div key={group.section} className={`menu-group ${expanded ? 'expanded' : 'collapsed'}`}>
             <button
-              key={item.id}
-              className={`nav-item ${activeNav === item.id ? 'active' : ''}`}
-              onClick={() => handleNavChange(item.id)}
+              type="button"
+              className="menu-group-title"
+              onClick={() => toggleNavSection(group.section)}
+              aria-expanded={expanded}
             >
-              {item.label}
+              {expanded ? <ChevronDown size={13} strokeWidth={2} aria-hidden="true" /> : <ChevronRight size={13} strokeWidth={2} aria-hidden="true" />}
+              <span>{group.section}</span>
             </button>
-          ))}
-        </div>
-      ))}
+            {expanded && (
+              <div className="menu-group-items">
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`nav-item ${activeNav === item.id ? 'active' : ''}`}
+                    onClick={() => handleNavChange(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </aside>
   );
 }
