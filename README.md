@@ -2,7 +2,7 @@
 
 # BeaverDeck
 
-BeaverDeck is a lightweight Kubernetes operations workspace for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
+BeaverDeck is a lightweight Kubernetes operations, optimization and triage tool for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
 Its Cluster Insights workflow helps operations teams find risks before they turn into incidents: it starts with categorized signals for nodes, workloads, networking, and storage, then lets operators drill into manifests, logs, exec sessions, and remediation actions from the same UI.
 
 ## Quick Start
@@ -157,7 +157,7 @@ Generate a local user password hash with the BeaverDeck binary or image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.0 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.1 hash-password
 unset BDPASS
 ```
 
@@ -209,7 +209,7 @@ Group mappings can use the group object ID, display name, mail address, or secur
 
 ## Build Requirements
 
-- Go 1.26.4 or newer
+- Go 1.26.5 or newer
 - Node.js 22 or newer for frontend builds
 
 ## Repository Layout

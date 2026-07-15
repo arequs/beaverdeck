@@ -1,6 +1,6 @@
 # BeaverDeck Helm Chart
 
-`BeaverDeck` installs BeaverDeck, a lightweight Kubernetes operations workspace for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
+`BeaverDeck` installs BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
 Its Cluster Insights workflow helps operations teams find risks before they turn into incidents: it starts with categorized signals for nodes, workloads, GPU, networking, storage, security, and configuration, then lets operators drill into manifests, logs, exec sessions, and remediation actions from the same UI.
 Focused Insights sections each load only the data needed for that troubleshooting area.
 For GPU-backed clusters, Insights can also highlight visibility gaps and tracking signals (including GPU-related), helping operators confirm where capacity exists and whether the expected monitoring path is available.
@@ -56,7 +56,7 @@ BeaverDeck stores auth configuration in a Kubernetes Secret and uses persistence
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
-  --version 2.2.1 \
+  --version 2.2.2 \
   --namespace beaverdeck \
   --create-namespace \
   --set clusterName=your-cluster-name
@@ -175,7 +175,7 @@ Generate a local user password hash with the BeaverDeck image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.0 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.1 hash-password
 unset BDPASS
 ```
 
@@ -254,7 +254,7 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `fullnameOverride` | `""` | Full override for generated resource names. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `image.repository` | `arequs/beaverdeck` | Container image repository. |
-| `image.tag` | `1.5.0` | Container image tag. |
+| `image.tag` | `1.5.1` | Container image tag. |
 | `ingress.annotations` | `{}` | Ingress annotations. |
 | `ingress.className` | `""` | Ingress class name. |
 | `ingress.enabled` | `false` | Render a single Ingress resource for BeaverDeck. |

@@ -1,16 +1,16 @@
 apiVersion: v2
 name: beaverdeck
-description: Helm chart for BeaverDeck, a lightweight Kubernetes operations panel
+description: Helm chart for BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool
 type: application
-version: 2.2.1
-appVersion: "1.5.0"
-home: https://arequs.com/beaverdeck/
+version: 2.2.2
+appVersion: "1.5.1"
+home: https://beaverdeck.io
 sources:
   - https://github.com/arequs/beaverdeck
 icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.png
 annotations:
   artifacthub.io/changes: |
-    - kind: fixed
-      description: "Corrected the placement and labels of the Overview and Insights screenshots."
-    - kind: changed
-      description: "Removed release policy text from the Helm chart description."
+    - kind: added
+      description: "Added Insight documentation links that explain each issue and how to fix it."
+    - kind: security
+      description: "Updated the default BeaverDeck image tag to 1.5.1 with Go 1.26.5 security fixes."

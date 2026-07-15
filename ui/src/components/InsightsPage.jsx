@@ -1,4 +1,26 @@
 import React from 'react';
+import { Info } from 'lucide-react';
+import { getInsightDocumentationUrl } from '../lib/insightDocumentation.js';
+
+function InsightHelpButton({ checkType }) {
+  const documentationUrl = getInsightDocumentationUrl(checkType);
+  if (!documentationUrl) return null;
+
+  return (
+    <div className="insight-help-row">
+      <span>Learn why:</span>
+      <button
+        type="button"
+        className="insight-help-button"
+        title="Why is this an issue?"
+        aria-label="Why is this an issue?"
+        onClick={() => window.open(documentationUrl, '_blank', 'noopener,noreferrer')}
+      >
+        <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
 
 export default function InsightsPage({
   categoryLabel,
@@ -153,6 +175,7 @@ export default function InsightsPage({
                         ))}
                       </ul>
                     ) : null}
+                    <InsightHelpButton checkType={alert.check_type} />
                   </article>
                 ))}
               </div>

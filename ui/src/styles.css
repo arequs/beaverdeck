@@ -918,12 +918,17 @@ tbody tr:hover {
 }
 
 .pod-icon-button,
-.action-menu-trigger {
+.action-menu-trigger,
+.insight-help-button {
   width: 27px;
   min-width: 27px;
   height: 27px;
   min-height: 27px;
   padding: 0;
+}
+
+.insight-help-button {
+  color: var(--accent-strong);
 }
 
 .pod-action-icon {
@@ -1352,6 +1357,31 @@ body[data-theme="light"] .logs-output-wrap {
   padding: 10px;
 }
 
+.insight-card {
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.insight-card-head {
+  min-width: 0;
+}
+
+.insight-actions {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.insights-grid,
+.insight-dashboard,
+.insight-dashboard-cards {
+  min-width: 0;
+}
+
 .insights-summary,
 .insight-filter-list,
 .insight-meta {
@@ -1384,6 +1414,18 @@ body[data-theme="light"] .logs-output-wrap {
 .insight-summary {
   margin: 0;
   color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.insight-help-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .insight-details {
@@ -1818,6 +1860,16 @@ body[data-theme="light"] .modal-backdrop {
   .mapping-form {
     flex-wrap: wrap;
     overflow: visible;
+  }
+
+  .insight-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .insight-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .toolbar input,
