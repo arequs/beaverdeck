@@ -56,7 +56,7 @@ BeaverDeck stores auth configuration in a Kubernetes Secret and uses persistence
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
-  --version 2.2.2 \
+  --version 2.2.3 \
   --namespace beaverdeck \
   --create-namespace \
   --set clusterName=your-cluster-name
@@ -175,7 +175,7 @@ Generate a local user password hash with the BeaverDeck image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.1 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.2 hash-password
 unset BDPASS
 ```
 
@@ -254,7 +254,7 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `fullnameOverride` | `""` | Full override for generated resource names. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `image.repository` | `arequs/beaverdeck` | Container image repository. |
-| `image.tag` | `1.5.1` | Container image tag. |
+| `image.tag` | `1.5.2` | Container image tag. |
 | `ingress.annotations` | `{}` | Ingress annotations. |
 | `ingress.className` | `""` | Ingress class name. |
 | `ingress.enabled` | `false` | Render a single Ingress resource for BeaverDeck. |
