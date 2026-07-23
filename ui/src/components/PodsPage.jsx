@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Logs, SquareTerminal } from 'lucide-react';
 import ActionMenu from './ActionMenu.jsx';
+import DelayedTooltip from './DelayedTooltip.jsx';
 
 function podRefKey(namespace, name) {
   return `${String(namespace || '').trim()}/${String(name || '').trim()}`;
@@ -155,6 +156,8 @@ export default function PodsPage({
                   ? { allowed: true, reason: '' }
                   : { allowed: false, reason: 'Exec is disabled for pods that are not fully running' }
               );
+              const logsActionPermission = allAllowed(selectionDisabledCheck, logsPermission);
+              const execActionPermission = allAllowed(selectionDisabledCheck, execPermission);
 
               return (
                 <tr
@@ -205,26 +208,28 @@ export default function PodsPage({
                   <td>{p.age}</td>
                   <td className="actions-cell">
                     <div className="pod-inline-actions" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="pod-icon-button"
-                        aria-label="Open pod logs"
-                        disabled={!allAllowed(selectionDisabledCheck, logsPermission).allowed}
-                        title={allAllowed(selectionDisabledCheck, logsPermission).allowed ? 'Logs' : allAllowed(selectionDisabledCheck, logsPermission).reason}
-                        onClick={() => safe(() => openPodLogsTab(p.namespace, p.name, '', p.containers))}
-                      >
-                        <Logs className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        className="pod-icon-button"
-                        aria-label="Open pod exec"
-                        disabled={!allAllowed(selectionDisabledCheck, execPermission).allowed}
-                        title={allAllowed(selectionDisabledCheck, execPermission).allowed ? 'Exec' : allAllowed(selectionDisabledCheck, execPermission).reason}
-                        onClick={() => safe(() => openPodExecTab(p.namespace, p.name, '', p.containers))}
-                      >
-                        <SquareTerminal className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
-                      </button>
+                      <DelayedTooltip content={logsActionPermission.allowed ? 'View logs' : logsActionPermission.reason}>
+                        <button
+                          type="button"
+                          className="pod-icon-button"
+                          aria-label="Open pod logs"
+                          disabled={!logsActionPermission.allowed}
+                          onClick={() => safe(() => openPodLogsTab(p.namespace, p.name, '', p.containers))}
+                        >
+                          <Logs className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+                        </button>
+                      </DelayedTooltip>
+                      <DelayedTooltip content={execActionPermission.allowed ? 'Open exec' : execActionPermission.reason}>
+                        <button
+                          type="button"
+                          className="pod-icon-button"
+                          aria-label="Open pod exec"
+                          disabled={!execActionPermission.allowed}
+                          onClick={() => safe(() => openPodExecTab(p.namespace, p.name, '', p.containers))}
+                        >
+                          <SquareTerminal className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+                        </button>
+                      </DelayedTooltip>
                       <ActionMenu
                         actions={[
                           makeAction('Manifest', allAllowed(selectionDisabledCheck, permissionInfo('pods', 'view', p.namespace)), () => safe(() => openManifestTab(p.namespace, 'pod', p.name))),

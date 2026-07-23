@@ -300,7 +300,7 @@ export function SecretsPage({
                   actions={[
                     makeAction(
                       'Manifest',
-                      permissionInfo('secrets', 'view', s.namespace),
+                      permissionInfo('secrets', 'edit', s.namespace),
                       () => safe(() => openManifestTab(s.namespace, 'secret', s.name))
                     ),
                     makeAction('Edit', permissionInfo('secrets', 'edit', s.namespace), () => safe(() => openEditTab(s.namespace, 'secret', s.name))),

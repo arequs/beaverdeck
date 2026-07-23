@@ -134,6 +134,7 @@ stringData:
 ```
 
 Any role with `mode: "admin"` has full access; its `permissions` value is ignored. Non-admin roles are controlled by their `permissions`. If `permissions` is omitted, the role has no permissions. Resource permission values are compact levels: `view`, `edit`, or `full`.
+For Secrets, `view` lists metadata only. Opening a Secret manifest, revealing decoded values, and editing require `secrets: edit`; deleting requires `secrets: full`. User and role administration always requires `mode: admin` and is not delegated through resource permissions.
 Valid partial configuration Secrets are completed during startup import. For example, a Secret that contains only a local admin-mode user and one OIDC provider is normalized with the current schema version, default admin role, empty Google config, default OIDC fields, and empty mappings before it is persisted back to the Secret after successful import.
 
 ### Suppressed Insights ConfigMap
@@ -157,7 +158,7 @@ Generate a local user password hash with the BeaverDeck binary or image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.2 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.3 hash-password
 unset BDPASS
 ```
 

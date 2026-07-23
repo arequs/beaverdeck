@@ -100,7 +100,7 @@ export const SORT_DEFAULTS = {
   storageclasses: { key: 'name', dir: 'asc' }
 };
 
-export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply', 'users', 'roles'];
+export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply'];
 export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'crds', 'pvs', 'storageclasses']);
 export const BOTTOM_DOCK_HIDDEN_NAVS = new Set([...INSIGHT_NAV_IDS, 'cluster-health', 'user-management', 'apply']);
 export const DOCK_TOP_RATIO_DEFAULT = 0.62;
@@ -131,7 +131,7 @@ export const ROLE_RESOURCE_OPTIONS = {
   pods: [
     { value: 'none', label: 'No access', hint: 'Cannot view or manage pods.' },
     { value: 'view', label: 'View pods', hint: 'Can view pod lists, manifests and logs.' },
-    { value: 'edit', label: 'Manage pods', hint: 'Can view and edit pods.' },
+    { value: 'edit', label: 'Manage pods', hint: 'Can edit pod manifests and evict pods.' },
     { value: 'full', label: 'Full pod access', hint: 'Can view, edit and delete pods.' }
   ],
   workloads: [
@@ -189,8 +189,8 @@ export const ROLE_RESOURCE_OPTIONS = {
   ],
   secrets: [
     { value: 'none', label: 'No access', hint: 'Cannot view Secrets.' },
-    { value: 'view', label: 'List Secrets', hint: 'Can view Secret metadata and base64 manifests.' },
-    { value: 'edit', label: 'Reveal and manage Secrets', hint: 'Can reveal Secret data and edit Secret manifests.' },
+    { value: 'view', label: 'List Secrets', hint: 'Can list Secret metadata only; cannot open manifests or data.' },
+    { value: 'edit', label: 'Reveal and manage Secrets', hint: 'Can open Secret manifests, reveal decoded data and edit manifests.' },
     { value: 'full', label: 'Full secret access', hint: 'Can reveal, edit and delete Secrets.' }
   ],
   pvcs: [
@@ -222,23 +222,11 @@ export const ROLE_RESOURCE_OPTIONS = {
   ],
   exec: [
     { value: 'none', label: 'No access', hint: 'Cannot use pod exec.' },
-    { value: 'edit', label: 'Use exec', hint: 'Can open exec sessions in running pods.' }
+    { value: 'edit', label: 'Use exec', hint: 'Can open exec sessions in running pods when View pods is also granted.' }
   ],
   apply: [
     { value: 'none', label: 'No access', hint: 'Cannot use Apply YAML.' },
     { value: 'edit', label: 'Apply YAML', hint: 'Can dry-run and apply manifests.' }
-  ],
-  users: [
-    { value: 'none', label: 'No access', hint: 'Cannot view users.' },
-    { value: 'view', label: 'View users', hint: 'Can see users and assigned roles.' },
-    { value: 'edit', label: 'Manage users', hint: 'Can create and update users.' },
-    { value: 'full', label: 'Full user admin', hint: 'Can create, update and delete users.' }
-  ],
-  roles: [
-    { value: 'none', label: 'No access', hint: 'Cannot view roles.' },
-    { value: 'view', label: 'View roles', hint: 'Can see defined roles.' },
-    { value: 'edit', label: 'Manage roles', hint: 'Can create and update roles.' },
-    { value: 'full', label: 'Full role admin', hint: 'Can create, update and delete roles.' }
   ]
 };
 

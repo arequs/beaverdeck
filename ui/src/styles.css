@@ -917,6 +917,41 @@ tbody tr:hover {
   flex-wrap: nowrap;
 }
 
+.delayed-tooltip-anchor {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.delayed-tooltip-anchor > button:disabled {
+  pointer-events: none;
+}
+
+.delayed-tooltip {
+  position: fixed;
+  z-index: 1600;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.delayed-tooltip-top {
+  transform: translate(-50%, -100%);
+}
+
+.delayed-tooltip-bottom {
+  transform: translateX(-50%);
+}
+
 .pod-icon-button,
 .action-menu-trigger,
 .insight-help-button {
@@ -954,7 +989,12 @@ tbody tr:hover {
   padding: 3px;
 }
 
+.action-menu-popover .delayed-tooltip-anchor {
+  width: 100%;
+}
+
 .action-menu-popover button {
+  width: 100%;
   min-height: 30px;
   justify-content: space-between;
   border: 0;
@@ -1111,7 +1151,19 @@ body[data-theme="light"] .yaml-block .yaml-value { color: #92400e; }
 }
 
 .log-block {
+  min-width: 0;
+  max-width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.log-block > div {
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .log-line-warn {
@@ -1271,7 +1323,10 @@ body[data-theme="light"] .yaml-block .yaml-value { color: #92400e; }
 
 .logs-output-wrap {
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 8px;
   border: 1px solid var(--line);
   background: #0b0d0f;
@@ -1282,6 +1337,9 @@ body[data-theme="light"] .logs-output-wrap {
 }
 
 .logs-output {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: auto;
   height: auto;
   margin: 0;

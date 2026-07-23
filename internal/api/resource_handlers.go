@@ -302,6 +302,13 @@ func (s *Server) suppressedInsightsRef() kube.SuppressedInsightsRef {
 	}
 }
 
+func manifestPermissionAction(resource string) string {
+	if resource == "secrets" {
+		return "edit"
+	}
+	return "view"
+}
+
 func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
 	ns, ok := s.namespaceFromQuery(r)
 	if !ok {
@@ -319,7 +326,7 @@ func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("unsupported kind: %s", kind))
 		return
 	}
-	if !s.requirePermission(w, r, resource, "view") {
+	if !s.requirePermission(w, r, resource, manifestPermissionAction(resource)) {
 		return
 	}
 

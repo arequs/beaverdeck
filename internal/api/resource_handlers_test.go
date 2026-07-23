@@ -1,0 +1,92 @@
+package api
+
+import (
+	"context"
+	"embed"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"beaverdeck/internal/auth"
+	"beaverdeck/internal/config"
+	"beaverdeck/internal/users"
+)
+
+func TestManifestPermissionAction(t *testing.T) {
+	tests := []struct {
+		resource string
+		want     string
+	}{
+		{resource: "pods", want: "view"},
+		{resource: "workloads", want: "view"},
+		{resource: "nodes", want: "view"},
+		{resource: "services", want: "view"},
+		{resource: "serviceaccounts", want: "view"},
+		{resource: "ingresses", want: "view"},
+		{resource: "rbacroles", want: "view"},
+		{resource: "clusterroles", want: "view"},
+		{resource: "configmaps", want: "view"},
+		{resource: "crds", want: "view"},
+		{resource: "secrets", want: "edit"},
+		{resource: "pvcs", want: "view"},
+		{resource: "pvs", want: "view"},
+		{resource: "storageclasses", want: "view"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.resource, func(t *testing.T) {
+			if got := manifestPermissionAction(tt.resource); got != tt.want {
+				t.Fatalf("manifest permission for %s = %q, want %q", tt.resource, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSecretListPermissionCannotReadManifest(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRole(ctx, "secret-lister", "viewer", []byte(`{"namespaces":["apps"],"resources":{"secrets":{"view":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, "operator", "operator-pass", users.Role("secret-lister")); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "operator", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{ManagedNamespace: "apps", AllowAllNamespaces: true}, nil, store, embed.FS{})
+	handler := auth.Middleware(store)(server.Routes())
+
+	for _, path := range []string{
+		"/api/manifest?namespace=apps&kind=secret&name=app-secret",
+		"/api/manifest?namespace=apps&kind=secret&name=app-secret&reveal=1",
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("X-BeaverDeck-Username", "operator")
+		response := httptest.NewRecorder()
+
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("%s returned status %d, want %d: %s", path, response.Code, http.StatusForbidden, response.Body.String())
+		}
+		if !strings.Contains(response.Body.String(), "permission denied: edit secrets") {
+			t.Fatalf("%s returned unexpected denial: %s", path, response.Body.String())
+		}
+	}
+}

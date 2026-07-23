@@ -56,7 +56,7 @@ BeaverDeck stores auth configuration in a Kubernetes Secret and uses persistence
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
-  --version 2.2.3 \
+  --version 2.2.4 \
   --namespace beaverdeck \
   --create-namespace \
   --set clusterName=your-cluster-name
@@ -152,6 +152,7 @@ stringData:
 ```
 
 Any role with `mode: "admin"` has full access; its `permissions` value is ignored. Non-admin roles are controlled by their `permissions`. If `permissions` is omitted, the role has no permissions. Resource permission values are compact levels: `view`, `edit`, or `full`.
+For Secrets, `view` lists metadata only. Opening a Secret manifest, revealing decoded values, and editing require `secrets: edit`; deleting requires `secrets: full`. User and role administration always requires `mode: admin` and is not delegated through resource permissions.
 Valid partial configuration Secrets are completed during startup import. For example, a Secret that contains only a local admin-mode user and one OIDC provider is normalized with the current schema version, default admin role, empty Google config, default OIDC fields, and empty mappings before it is persisted back to the Secret after successful import.
 
 #### Suppressed Insights ConfigMap
@@ -175,7 +176,7 @@ Generate a local user password hash with the BeaverDeck image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.2 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.3 hash-password
 unset BDPASS
 ```
 
@@ -254,7 +255,7 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `fullnameOverride` | `""` | Full override for generated resource names. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `image.repository` | `arequs/beaverdeck` | Container image repository. |
-| `image.tag` | `1.5.2` | Container image tag. |
+| `image.tag` | `1.5.3` | Container image tag. |
 | `ingress.annotations` | `{}` | Ingress annotations. |
 | `ingress.className` | `""` | Ingress class name. |
 | `ingress.enabled` | `false` | Render a single Ingress resource for BeaverDeck. |

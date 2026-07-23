@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LockKeyhole, MoreHorizontal } from 'lucide-react';
+import DelayedTooltip from './DelayedTooltip.jsx';
 
 export default function ActionMenu({ actions = [] }) {
   const normalized = actions.filter((action) => action && action.label);
@@ -62,27 +63,28 @@ export default function ActionMenu({ actions = [] }) {
 
   return (
     <div className="action-menu" ref={rootRef} onClick={(event) => event.stopPropagation()}>
-      <button
-        className={`action-menu-trigger ${!hasEnabled ? 'disabled' : ''}`}
-        onClick={() => hasEnabled && setOpen((value) => !value)}
-        title={hasEnabled ? 'Actions' : (disabledReasons.join('\n') || 'No actions available')}
-        disabled={!hasEnabled}
-        aria-label="Actions"
-      >
-        <MoreHorizontal size={15} strokeWidth={1.8} aria-hidden="true" />
-      </button>
+      <DelayedTooltip content={hasEnabled ? 'Actions' : (disabledReasons.join('\n') || 'No actions available')}>
+        <button
+          className={`action-menu-trigger ${!hasEnabled ? 'disabled' : ''}`}
+          onClick={() => hasEnabled && setOpen((value) => !value)}
+          disabled={!hasEnabled}
+          aria-label="Actions"
+        >
+          <MoreHorizontal size={15} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+      </DelayedTooltip>
       {open ? createPortal(
         <div className="action-menu-popover" ref={popoverRef} style={popoverStyle}>
           {normalized.map((action) => (
-            <button
-              key={action.label}
-              onClick={() => run(action)}
-              disabled={!action.enabled}
-              title={action.enabled ? action.label : action.reason}
-            >
-              <span>{action.label}</span>
-              {!action.enabled ? <LockKeyhole size={13} strokeWidth={1.8} aria-hidden="true" /> : null}
-            </button>
+            <DelayedTooltip key={action.label} content={action.enabled ? action.label : action.reason}>
+              <button
+                onClick={() => run(action)}
+                disabled={!action.enabled}
+              >
+                <span>{action.label}</span>
+                {!action.enabled ? <LockKeyhole size={13} strokeWidth={1.8} aria-hidden="true" /> : null}
+              </button>
+            </DelayedTooltip>
           ))}
         </div>,
         document.body
