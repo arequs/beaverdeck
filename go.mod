@@ -1,6 +1,6 @@
 module beaverdeck
 
-go 1.26.5
+go 1.27rc3
 
 require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674

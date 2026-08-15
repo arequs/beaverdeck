@@ -210,7 +210,7 @@ Group mappings can use the group object ID, display name, mail address, or secur
 
 ## Build Requirements
 
-- Go 1.26.5 or newer
+- Go 1.27rc3 or newer
 - Node.js 22 or newer for frontend builds
 
 ## Repository Layout
