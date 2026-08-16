@@ -30,13 +30,15 @@ This keeps BeaverDeck responsive on larger clusters and makes the troubleshootin
 
 After an Insight points to a likely issue, BeaverDeck provides the operational tools needed to confirm and act:
 
-- browse cluster objects such as pods, workloads, nodes, services, ingresses, config maps, secrets, PVCs, PVs, storage classes, CRDs, and events
+- browse cluster objects such as pods, workloads, nodes, services, ingresses, config maps, secrets, PVCs, PVs, storage classes, CRDs and their custom resources, and events
 - inspect manifests as YAML and apply edits through the UI
 - stream pod and workload logs, including older log history when troubleshooting
 - open `exec` sessions into running pods
 - run common operational actions such as scale, restart, delete, evict, drain, and uncordon
 - review cluster health, warnings, and category-scoped operational insights without jumping between multiple Kubernetes tools
 - keep access controlled with users, roles, and namespace-scoped permissions
+
+The CRDs navigation item expands into all definitions visible in the cluster. Namespaced custom resources are queried only in namespaces allowed by the signed-in user's BeaverDeck role. To support arbitrary installed CRDs, the chart ClusterRole grants the BeaverDeck ServiceAccount wildcard get/list/create/update/patch/delete access across API groups and resources; BeaverDeck's application RBAC restricts which users can use that access.
 
 ![BeaverDeck Overview](https://raw.githubusercontent.com/arequs/beaverdeck/main/docs/images/overview.png)
 

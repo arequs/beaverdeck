@@ -43,6 +43,19 @@ func TestManifestPermissionAction(t *testing.T) {
 	}
 }
 
+func TestCustomResourceReferencesUseCRDPermissions(t *testing.T) {
+	const ref = "customresource:widgets.example.io"
+	if got := kindToResource(ref); got != "crds" {
+		t.Fatalf("kindToResource(%q) = %q, want crds", ref, got)
+	}
+	if resource, namespaced, err := permissionDeleteTarget(ref); err != nil || resource != "crds" || namespaced {
+		t.Fatalf("permissionDeleteTarget(%q) = %q, %t, %v", ref, resource, namespaced, err)
+	}
+	if name, ok := customResourceCRDName(ref); !ok || name != "widgets.example.io" {
+		t.Fatalf("customResourceCRDName(%q) = %q, %t", ref, name, ok)
+	}
+}
+
 func TestSecretListPermissionCannotReadManifest(t *testing.T) {
 	ctx := context.Background()
 	store, err := users.Open(t.TempDir())
@@ -88,5 +101,47 @@ func TestSecretListPermissionCannotReadManifest(t *testing.T) {
 		if !strings.Contains(response.Body.String(), "permission denied: edit secrets") {
 			t.Fatalf("%s returned unexpected denial: %s", path, response.Body.String())
 		}
+	}
+}
+
+func TestCustomResourceListRejectsForbiddenNamespaceBeforeClusterLookup(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRole(ctx, "crd-reader", "viewer", []byte(`{"namespaces":["apps"],"resources":{"crds":{"view":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, "operator", "operator-pass", users.Role("crd-reader")); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "operator", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{ManagedNamespace: "apps", AllowAllNamespaces: true}, nil, store, embed.FS{})
+	handler := auth.Middleware(store)(server.Routes())
+	request := httptest.NewRequest(http.MethodGet, "/api/crds/widgets.example.io/resources?namespace=restricted", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-BeaverDeck-Username", "operator")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "namespace is not allowed") {
+		t.Fatalf("returned unexpected denial: %s", response.Body.String())
 	}
 }

@@ -134,7 +134,15 @@ export function SidebarNav({
   visibleMenu,
   expandedNavSections,
   toggleNavSection,
-  handleNavChange
+  handleNavChange,
+  selectedCRDName,
+  selectedCRDGroup,
+  crdNavExpanded,
+  expandedCRDGroups,
+  toggleCRDNav,
+  toggleCRDGroup,
+  handleCRDGroupSelect,
+  handleCRDSelect
 }) {
   const allNamespacesRef = useRef(null);
   const allNamespacesSelected = namespaces.length > 0 && selectedNamespaces.length === namespaces.length;
@@ -198,7 +206,67 @@ export function SidebarNav({
             </button>
             {expanded && (
               <div className="menu-group-items">
-                {group.items.map((item) => (
+                {group.items.map((item) => item.id === 'crds' ? (
+                  <div key={item.id} className="nav-item-tree">
+                    <div className="nav-item-row">
+                      <button
+                        type="button"
+                        className="nav-item-toggle"
+                        onClick={toggleCRDNav}
+                        aria-label={crdNavExpanded ? 'Collapse CRDs' : 'Expand CRDs'}
+                        aria-expanded={crdNavExpanded}
+                      >
+                        {crdNavExpanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
+                      </button>
+                      <button
+                        className={`nav-item nav-item-main ${activeNav === item.id ? 'active' : ''}`}
+                        onClick={() => handleNavChange(item.id)}
+                      >
+                        {item.label}
+                      </button>
+                    </div>
+                    {crdNavExpanded && item.children?.length > 0 ? (
+                      <div className="nav-tree-children">
+                        {item.children.map((crdGroup) => (
+                          <div key={crdGroup.id} className="nav-item-tree">
+                            <div className="nav-item-row">
+                              <button
+                                type="button"
+                                className="nav-item-toggle"
+                                onClick={() => toggleCRDGroup(crdGroup.id)}
+                                aria-label={expandedCRDGroups?.has(crdGroup.id) ? `Collapse ${crdGroup.label}` : `Expand ${crdGroup.label}`}
+                                aria-expanded={expandedCRDGroups?.has(crdGroup.id)}
+                              >
+                                {expandedCRDGroups?.has(crdGroup.id) ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
+                              </button>
+                              <button
+                                className={`nav-item nav-item-main nav-tree-child ${selectedCRDGroup === crdGroup.id && !selectedCRDName ? 'active' : ''}`}
+                                onClick={() => handleCRDGroupSelect(crdGroup.id)}
+                                title={crdGroup.label}
+                              >
+                                {crdGroup.label}
+                              </button>
+                            </div>
+                            {expandedCRDGroups?.has(crdGroup.id) && crdGroup.children?.length > 0 ? (
+                              <div className="nav-tree-children">
+                                {crdGroup.children.map((child) => (
+                                  <button
+                                    key={child.id}
+                                    className={`nav-item nav-tree-child nav-tree-leaf ${selectedCRDName === child.id ? 'active' : ''}`}
+                                    onClick={() => handleCRDSelect(child.id)}
+                                    title={`${child.label} (${child.id})`}
+                                  >
+                                    {child.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
                   <button
                     key={item.id}
                     className={`nav-item ${activeNav === item.id ? 'active' : ''}`}

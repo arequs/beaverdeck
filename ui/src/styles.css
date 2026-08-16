@@ -586,6 +586,9 @@ button.menu-group-title:focus-visible {
 .menu-group-items {
   display: grid;
   gap: 1px;
+  margin-left: 15px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
 }
 
 .nav-item {
@@ -609,6 +612,53 @@ button.menu-group-title:focus-visible {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
+}
+
+.nav-item-tree {
+  display: grid;
+  min-width: 0;
+}
+
+.nav-item-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 0;
+}
+
+.nav-item-main {
+  min-width: 0;
+  padding-left: 3px;
+}
+
+.nav-item-toggle {
+  min-width: 18px;
+  width: 18px;
+  min-height: 24px;
+  padding: 2px 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted-2);
+}
+
+.nav-tree-children {
+  display: grid;
+  gap: 1px;
+  margin-left: 9px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
+}
+
+.nav-tree-child {
+  min-width: 0;
+  padding-left: 3px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-tree-leaf {
+  padding-left: 18px;
 }
 
 .workspace {

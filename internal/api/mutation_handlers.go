@@ -238,6 +238,14 @@ func (s *Server) deleteResource(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePermission(w, r, resource, "delete") {
 		return
 	}
+	if crdName, custom := customResourceCRDName(req.Kind); custom {
+		definition, resolveErr := s.kube.ResolveCustomResourceDefinition(r.Context(), crdName)
+		if resolveErr != nil {
+			writeErr(w, http.StatusInternalServerError, resolveErr)
+			return
+		}
+		namespaced = definition.Namespaced
+	}
 	if namespaced && !s.namespaceAllowedForRequest(r, req.Namespace) {
 		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
 		return
@@ -275,6 +283,9 @@ func (s *Server) evictPod(w http.ResponseWriter, r *http.Request) {
 }
 
 func permissionDeleteTarget(kind string) (resource string, namespaced bool, err error) {
+	if _, ok := customResourceCRDName(kind); ok {
+		return "crds", false, nil
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod", "pods":
 		return "pods", true, nil
@@ -410,7 +421,16 @@ func (s *Server) updateManifest(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePermission(w, r, resource, "edit") {
 		return
 	}
-	if !s.namespaceAllowedForRequest(r, req.Namespace) {
+	namespaced := true
+	if crdName, custom := customResourceCRDName(req.Kind); custom {
+		definition, resolveErr := s.kube.ResolveCustomResourceDefinition(r.Context(), crdName)
+		if resolveErr != nil {
+			writeErr(w, http.StatusInternalServerError, resolveErr)
+			return
+		}
+		namespaced = definition.Namespaced
+	}
+	if namespaced && !s.namespaceAllowedForRequest(r, req.Namespace) {
 		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
 		return
 	}

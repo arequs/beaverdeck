@@ -76,6 +76,25 @@ import { withBasePath } from './lib/paths.js';
 
 const ACTIVE_NAV_STORAGE_KEY = 'beaverdeck.activeNav';
 const DEFAULT_EXPANDED_NAV_SECTIONS = new Set();
+
+function groupCRDsForNavigation(crds) {
+  const groups = new Map();
+  crds.forEach((crd) => {
+    const group = crd.group || 'Other';
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(crd);
+  });
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([group, groupCRDs]) => ({
+      id: group,
+      label: group,
+      children: groupCRDs
+        .sort((left, right) => (left.kind || left.name).localeCompare(right.kind || right.name))
+        .map((crd) => ({ id: crd.name, label: crd.kind || crd.name }))
+    }));
+}
+
 const DEFAULT_OIDC_CONFIG = {
   provider_name: 'OpenID Connect',
   issuer_url: '',
@@ -175,6 +194,12 @@ export default function App() {
   const [serviceAccounts, setServiceAccounts] = useState([]);
   const [configMaps, setConfigMaps] = useState([]);
   const [crds, setCRDs] = useState([]);
+  const [selectedCRDName, setSelectedCRDName] = useState('');
+  const [selectedCRDGroup, setSelectedCRDGroup] = useState('');
+  const [customResources, setCustomResources] = useState([]);
+  const [customResourceDefinition, setCustomResourceDefinition] = useState(null);
+  const [crdNavExpanded, setCRDNavExpanded] = useState(false);
+  const [expandedCRDGroups, setExpandedCRDGroups] = useState(() => new Set());
   const [secrets, setSecrets] = useState([]);
   const [pvcs, setPVCs] = useState([]);
   const [pvs, setPVs] = useState([]);
@@ -240,6 +265,7 @@ export default function App() {
   const [serviceAccountSearch, setServiceAccountSearch] = useState('');
   const [configMapSearch, setConfigMapSearch] = useState('');
   const [crdSearch, setCRDSearch] = useState('');
+  const [customResourceSearch, setCustomResourceSearch] = useState('');
   const [secretSearch, setSecretSearch] = useState('');
   const [pvcSearch, setPVCSearch] = useState('');
   const [pvSearch, setPVSearch] = useState('');
@@ -351,6 +377,11 @@ export default function App() {
       setServiceAccounts([]);
       setConfigMaps([]);
       setCRDs([]);
+      setSelectedCRDName('');
+      setSelectedCRDGroup('');
+      setCustomResources([]);
+      setCustomResourceDefinition(null);
+      setExpandedCRDGroups(new Set());
       setSecrets([]);
       setPVCs([]);
       setPVs([]);
@@ -426,9 +457,19 @@ export default function App() {
   const visibleMenu = useMemo(
     () => MENU
       .filter((group) => group.section !== 'Admin' || isAdmin)
-      .map((group) => ({ ...group, items: group.items.filter((item) => canAccessNav(item.id)) }))
+      .map((group) => ({
+        ...group,
+        items: group.items
+          .filter((item) => canAccessNav(item.id))
+          .map((item) => item.id === 'crds'
+            ? {
+                ...item,
+                children: groupCRDsForNavigation(crds)
+              }
+            : item)
+      }))
       .filter((group) => group.items.length > 0),
-    [isAdmin, userPermissions]
+    [isAdmin, userPermissions, crds]
   );
   const visibleNavItems = useMemo(() => visibleMenu.flatMap((group) => group.items), [visibleMenu]);
   const expandNavSectionForNav = useCallback((navId) => {
@@ -986,10 +1027,23 @@ export default function App() {
   );
   const sortedConfigMaps = useMemo(() => getSorted('configmaps', filteredConfigMaps), [filteredConfigMaps, sortByNav]);
   const filteredCRDs = useMemo(
-    () => filterRowsByQuery(crds, crdSearch, ['name', 'group', 'kind', 'scope', 'versions', 'age']),
-    [crds, crdSearch]
+    () => filterRowsByQuery(
+      selectedCRDGroup ? crds.filter((item) => item.group === selectedCRDGroup) : crds,
+      crdSearch,
+      ['name', 'group', 'kind', 'scope', 'versions', 'age']
+    ),
+    [crds, crdSearch, selectedCRDGroup]
   );
   const sortedCRDs = useMemo(() => getSorted('crds', filteredCRDs), [filteredCRDs, sortByNav]);
+  const selectedCRD = useMemo(() => crds.find((item) => item.name === selectedCRDName) || null, [crds, selectedCRDName]);
+  const filteredCustomResources = useMemo(
+    () => filterRowsByQuery(customResources, customResourceSearch, ['name', 'namespace', 'api_version', 'kind', 'age']),
+    [customResources, customResourceSearch]
+  );
+  const sortedCustomResources = useMemo(
+    () => getSorted('customresources', filteredCustomResources),
+    [filteredCustomResources, sortByNav]
+  );
   const filteredSecrets = useMemo(
     () => filterRowsByQuery(secrets, secretSearch, ['name', 'namespace', 'type', 'data_keys', 'age']),
     [secrets, secretSearch]
@@ -1062,13 +1116,91 @@ export default function App() {
   }
 
   function handleNavChange(nextNav) {
-    if (!nextNav || nextNav === activeNav) return;
+    if (!nextNav) return;
+    if (nextNav === 'crds') {
+      setSelectedCRDName('');
+      setSelectedCRDGroup('');
+      setCustomResources([]);
+      setCustomResourceDefinition(null);
+    }
+    if (nextNav === activeNav) return;
     setWarningPopover(null);
     if (warningHideTimerRef.current) {
       clearTimeout(warningHideTimerRef.current);
       warningHideTimerRef.current = null;
     }
     activateNav(nextNav);
+  }
+
+  function handleCRDSelect(name) {
+    const nextName = name || '';
+    setSelectedCRDName(nextName);
+    const nextCRD = crds.find((item) => item.name === nextName);
+    if (nextCRD) {
+      const group = nextCRD.group || 'Other';
+      setSelectedCRDGroup(group);
+      setExpandedCRDGroups((previous) => new Set(previous).add(group));
+    }
+    setCustomResourceSearch('');
+    setCRDNavExpanded(true);
+    activateNav('crds');
+    safe(() => refreshSelectedCRDResources(crds, nextName));
+  }
+
+  function handleCRDGroupSelect(group) {
+    setSelectedCRDGroup(group || '');
+    setSelectedCRDName('');
+    setCustomResources([]);
+    setCustomResourceDefinition(null);
+    setCRDSearch('');
+    setCRDNavExpanded(true);
+    activateNav('crds');
+  }
+
+  function toggleCRDGroup(group) {
+    setExpandedCRDGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  }
+
+  function toggleCRDNav() {
+    const expanding = !crdNavExpanded;
+    setCRDNavExpanded(expanding);
+    if (expanding && crds.length === 0) {
+      safe(async () => {
+        const data = await api('/api/crds');
+        setCRDs(data.items || []);
+      });
+    }
+  }
+
+  async function refreshSelectedCRDResources(crdItems = crds, crdName = selectedCRDName) {
+    if (!crdName) {
+      setCustomResources([]);
+      setCustomResourceDefinition(null);
+      return;
+    }
+    const selected = crdItems.find((item) => item.name === crdName);
+    if (!selected) {
+      setSelectedCRDName('');
+      setCustomResources([]);
+      setCustomResourceDefinition(null);
+      return;
+    }
+    if (String(selected.scope).toLowerCase() === 'namespaced' && selectedNamespaces.length === 0) {
+      setCustomResources([]);
+      setCustomResourceDefinition({ ...selected, namespaced: true });
+      return;
+    }
+    const params = new URLSearchParams();
+    if (selectedNamespaces.length > 0) params.set('namespace', namespaceQuery);
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const data = await api(`/api/crds/${encodeURIComponent(crdName)}/resources${suffix}`);
+    setCustomResources(data.items || []);
+    setCustomResourceDefinition(data.definition || null);
   }
 
   async function refreshAll() {
@@ -1158,7 +1290,9 @@ export default function App() {
       },
       crds: async () => {
         const crdData = await api('/api/crds');
-        setCRDs(crdData.items || []);
+        const items = crdData.items || [];
+        setCRDs(items);
+        await refreshSelectedCRDResources(items);
       },
       secrets: async () => {
         if (selectedNamespaces.length === 0) {
@@ -2668,6 +2802,14 @@ export default function App() {
         expandedNavSections={expandedNavSections}
         toggleNavSection={toggleNavSection}
         handleNavChange={handleNavChange}
+        selectedCRDName={selectedCRDName}
+        selectedCRDGroup={selectedCRDGroup}
+        crdNavExpanded={crdNavExpanded}
+        expandedCRDGroups={expandedCRDGroups}
+        toggleCRDNav={toggleCRDNav}
+        toggleCRDGroup={toggleCRDGroup}
+        handleCRDGroupSelect={handleCRDGroupSelect}
+        handleCRDSelect={handleCRDSelect}
       />
 
       <section className="workspace">
@@ -2933,6 +3075,13 @@ export default function App() {
               openEditTab={openEditTab}
               deleteResourceByRef={deleteResourceByRef}
               refreshAll={refreshAll}
+              selectedCRD={selectedCRD}
+              selectedCRDGroup={selectedCRDGroup}
+              customResourceSearch={customResourceSearch}
+              setCustomResourceSearch={setCustomResourceSearch}
+              sortedCustomResources={sortedCustomResources}
+              customResourceDefinition={customResourceDefinition}
+              selectCRDGroup={handleCRDGroupSelect}
             />
           )}
 

@@ -156,9 +156,28 @@ type CRDInfo struct {
 	Name     string `json:"name"`
 	Group    string `json:"group"`
 	Kind     string `json:"kind"`
+	Resource string `json:"resource"`
+	Version  string `json:"version"`
 	Scope    string `json:"scope"`
 	Versions string `json:"versions"`
 	Age      string `json:"age"`
+}
+
+type CustomResourceDefinition struct {
+	Name       string
+	Group      string
+	Version    string
+	Resource   string
+	Kind       string
+	Namespaced bool
+}
+
+type CustomResourceInfo struct {
+	Namespace  string `json:"namespace,omitempty"`
+	Name       string `json:"name"`
+	APIVersion string `json:"api_version"`
+	Kind       string `json:"kind"`
+	Age        string `json:"age"`
 }
 
 type ServiceInfo struct {

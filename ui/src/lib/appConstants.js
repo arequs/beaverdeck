@@ -94,6 +94,7 @@ export const SORT_DEFAULTS = {
   ingresses: { key: 'name', dir: 'asc' },
   configmaps: { key: 'name', dir: 'asc' },
   crds: { key: 'name', dir: 'asc' },
+  customresources: { key: 'name', dir: 'asc' },
   secrets: { key: 'name', dir: 'asc' },
   pvcs: { key: 'name', dir: 'asc' },
   pvs: { key: 'name', dir: 'asc' },
@@ -101,7 +102,7 @@ export const SORT_DEFAULTS = {
 };
 
 export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply'];
-export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'crds', 'pvs', 'storageclasses']);
+export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'pvs', 'storageclasses']);
 export const BOTTOM_DOCK_HIDDEN_NAVS = new Set([...INSIGHT_NAV_IDS, 'cluster-health', 'user-management', 'apply']);
 export const DOCK_TOP_RATIO_DEFAULT = 0.62;
 export const DOCK_TOP_RATIO_MIN = 0.3;
@@ -183,9 +184,9 @@ export const ROLE_RESOURCE_OPTIONS = {
   ],
   crds: [
     { value: 'none', label: 'No access', hint: 'Cannot view CustomResourceDefinitions.' },
-    { value: 'view', label: 'View CRDs', hint: 'Can view CustomResourceDefinitions and manifests.' },
-    { value: 'edit', label: 'Manage CRDs', hint: 'Can edit CustomResourceDefinitions.' },
-    { value: 'full', label: 'Full CRD access', hint: 'Can view, edit and delete CustomResourceDefinitions.' }
+    { value: 'view', label: 'View CRDs', hint: 'Can view CustomResourceDefinitions and custom resources in allowed namespaces.' },
+    { value: 'edit', label: 'Manage CRDs', hint: 'Can edit CustomResourceDefinitions and custom resources in allowed namespaces.' },
+    { value: 'full', label: 'Full CRD access', hint: 'Can view, edit and delete CustomResourceDefinitions and custom resources in allowed namespaces.' }
   ],
   secrets: [
     { value: 'none', label: 'No access', hint: 'Cannot view Secrets.' },
@@ -232,6 +233,8 @@ export const ROLE_RESOURCE_OPTIONS = {
 
 export const APPLY_TEMPLATES = {
   'ConfigMap': `apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: sample-config\n  namespace: default\ndata:\n  APP_ENV: dev\n  LOG_LEVEL: info\n`,
+  'CRD (Sample Widget)': `apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: widgets.demo.beaverdeck.io\nspec:\n  group: demo.beaverdeck.io\n  scope: Namespaced\n  names:\n    plural: widgets\n    singular: widget\n    kind: Widget\n    shortNames:\n      - wdgt\n  versions:\n    - name: v1alpha1\n      served: true\n      storage: true\n      schema:\n        openAPIV3Schema:\n          type: object\n          properties:\n            spec:\n              type: object\n              required:\n                - message\n              properties:\n                message:\n                  type: string\n                replicas:\n                  type: integer\n                  minimum: 1\n                  default: 1\n                enabled:\n                  type: boolean\n                  default: true\n      additionalPrinterColumns:\n        - name: Message\n          type: string\n          jsonPath: .spec.message\n        - name: Replicas\n          type: integer\n          jsonPath: .spec.replicas\n        - name: Enabled\n          type: boolean\n          jsonPath: .spec.enabled\n`,
+  'Custom Resource (Sample Widget)': `apiVersion: demo.beaverdeck.io/v1alpha1\nkind: Widget\nmetadata:\n  name: sample-widget\nspec:\n  message: Hello from BeaverDeck\n  replicas: 2\n  enabled: true\n`,
   'Secret (Opaque)': `apiVersion: v1\nkind: Secret\nmetadata:\n  name: sample-secret\n  namespace: default\ntype: Opaque\nstringData:\n  username: admin\n  password: change-me\n`,
   'Deployment': `apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: sample-app\n  namespace: default\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: sample-app\n  template:\n    metadata:\n      labels:\n        app: sample-app\n    spec:\n      containers:\n        - name: app\n          image: nginx:1.27\n          ports:\n            - containerPort: 80\n`,
   'Service (ClusterIP)': `apiVersion: v1\nkind: Service\nmetadata:\n  name: sample-service\n  namespace: default\nspec:\n  selector:\n    app: sample-app\n  ports:\n    - port: 80\n      targetPort: 80\n  type: ClusterIP\n`,

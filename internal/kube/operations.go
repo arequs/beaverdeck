@@ -402,6 +402,20 @@ func (c *Client) DeletePod(ctx context.Context, ns, name string) error {
 }
 
 func (c *Client) DeleteResource(ctx context.Context, namespace, kind, name string) error {
+	if crdName, ok := customResourceReference(kind); ok {
+		definition, err := c.ResolveCustomResourceDefinition(ctx, crdName)
+		if err != nil {
+			return err
+		}
+		gvr := schema.GroupVersionResource{Group: definition.Group, Version: definition.Version, Resource: definition.Resource}
+		if definition.Namespaced {
+			if strings.TrimSpace(namespace) == "" {
+				return fmt.Errorf("namespace is required for %s", definition.Kind)
+			}
+			return c.dyn.Resource(gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		}
+		return c.dyn.Resource(gvr).Delete(ctx, name, metav1.DeleteOptions{})
+	}
 	gvr, namespaced, err := deleteTargetForKind(kind)
 	if err != nil {
 		return err
@@ -697,7 +711,16 @@ func (c *Client) UpdateManifestYAML(ctx context.Context, namespace, kind, name, 
 	if gvk.Empty() {
 		return ApplyResult{}, fmt.Errorf("object missing apiVersion/kind")
 	}
-	if !strings.EqualFold(gvk.Kind, strings.TrimSpace(kind)) {
+	customDefinition := CustomResourceDefinition{}
+	if crdName, custom := customResourceReference(kind); custom {
+		customDefinition, err = c.ResolveCustomResourceDefinition(ctx, crdName)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		if gvk.Group != customDefinition.Group || !strings.EqualFold(gvk.Kind, customDefinition.Kind) {
+			return ApplyResult{}, fmt.Errorf("manifest %s/%s does not match CRD %s", gvk.Group, gvk.Kind, crdName)
+		}
+	} else if !strings.EqualFold(gvk.Kind, strings.TrimSpace(kind)) {
 		return ApplyResult{}, fmt.Errorf("manifest kind %q does not match %q", gvk.Kind, kind)
 	}
 	if obj.GetName() != strings.TrimSpace(name) {
@@ -711,6 +734,9 @@ func (c *Client) UpdateManifestYAML(ctx context.Context, namespace, kind, name, 
 		if err != nil {
 			return ApplyResult{}, fmt.Errorf("rest mapping for %s: %w", gvk.String(), err)
 		}
+	}
+	if customDefinition.Name != "" && (mapping.Resource.Group != customDefinition.Group || mapping.Resource.Resource != customDefinition.Resource) {
+		return ApplyResult{}, fmt.Errorf("manifest resource does not match CRD %s", customDefinition.Name)
 	}
 
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
@@ -775,6 +801,23 @@ func singleManifestObject(doc string) (*unstructured.Unstructured, error) {
 }
 
 func (c *Client) GetManifestYAML(ctx context.Context, namespace, kind, name string) (string, error) {
+	if crdName, ok := customResourceReference(kind); ok {
+		definition, err := c.ResolveCustomResourceDefinition(ctx, crdName)
+		if err != nil {
+			return "", err
+		}
+		gvr := schema.GroupVersionResource{Group: definition.Group, Version: definition.Version, Resource: definition.Resource}
+		var obj *unstructured.Unstructured
+		if definition.Namespaced {
+			obj, err = c.dyn.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		} else {
+			obj, err = c.dyn.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+		}
+		if err != nil {
+			return "", err
+		}
+		return objectToYAML(obj.Object)
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod":
 		obj, err := c.core.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
@@ -903,6 +946,16 @@ func (c *Client) GetManifestYAML(ctx context.Context, namespace, kind, name stri
 	default:
 		return "", fmt.Errorf("unsupported kind: %s", kind)
 	}
+}
+
+func customResourceReference(kind string) (string, bool) {
+	const prefix = "customresource:"
+	normalized := strings.TrimSpace(kind)
+	if len(normalized) <= len(prefix) || !strings.EqualFold(normalized[:len(prefix)], prefix) {
+		return "", false
+	}
+	name := strings.TrimSpace(normalized[len(prefix):])
+	return name, name != ""
 }
 
 func (c *Client) GetSecretDecodedData(ctx context.Context, namespace, name string) (map[string]string, error) {

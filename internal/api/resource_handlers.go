@@ -113,6 +113,45 @@ func (s *Server) crds(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) customResources(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePermission(w, r, "crds", "view") {
+		return
+	}
+	var namespaces []string
+	var err error
+	if strings.TrimSpace(r.URL.Query().Get("namespace")) != "" {
+		namespaces, err = s.namespacedQuery(r)
+		if err != nil {
+			writeErr(w, http.StatusForbidden, err)
+			return
+		}
+	}
+	definition, err := s.kube.ResolveCustomResourceDefinition(r.Context(), r.PathValue("name"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if definition.Namespaced && len(namespaces) == 0 {
+		namespaces, err = s.namespacedQuery(r)
+		if err != nil {
+			writeErr(w, http.StatusForbidden, err)
+			return
+		}
+	}
+	items, err := s.kube.ListCustomResources(r.Context(), definition, namespaces)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"definition": map[string]any{
+			"name": definition.Name, "group": definition.Group, "version": definition.Version,
+			"resource": definition.Resource, "kind": definition.Kind, "namespaced": definition.Namespaced,
+		},
+	})
+}
+
 func (s *Server) services(w http.ResponseWriter, r *http.Request) {
 	writeNamespacedList(s, w, r, "services", func(ctx context.Context, ns string) ([]kube.ServiceInfo, error) {
 		return s.kube.ListServices(ctx, ns)
@@ -310,11 +349,6 @@ func manifestPermissionAction(resource string) string {
 }
 
 func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
-	ns, ok := s.namespaceFromQuery(r)
-	if !ok {
-		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
-		return
-	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if kind == "" || name == "" {
@@ -328,6 +362,25 @@ func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.requirePermission(w, r, resource, manifestPermissionAction(resource)) {
 		return
+	}
+	ns := strings.TrimSpace(r.URL.Query().Get("namespace"))
+	if crdName, custom := customResourceCRDName(kind); custom {
+		definition, err := s.kube.ResolveCustomResourceDefinition(r.Context(), crdName)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		if definition.Namespaced && !s.namespaceAllowedForRequest(r, ns) {
+			writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+			return
+		}
+	} else {
+		var ok bool
+		ns, ok = s.namespaceFromQuery(r)
+		if !ok {
+			writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+			return
+		}
 	}
 
 	revealSecret := resource == "secrets" &&

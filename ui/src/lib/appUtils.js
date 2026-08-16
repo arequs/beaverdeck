@@ -212,6 +212,7 @@ export function formatBytesIEC(value) {
 
 export function kindToResource(kind) {
   const normalized = String(kind || '').toLowerCase();
+  if (normalized.startsWith('customresource:')) return 'crds';
   if (['pod', 'pods'].includes(normalized)) return 'pods';
   if (['deployment', 'deployments', 'daemonset', 'daemonsets', 'statefulset', 'statefulsets', 'job', 'jobs', 'cronjob', 'cronjobs', 'replicaset', 'replicasets', 'replicationcontroller', 'replicationcontrollers'].includes(normalized)) return 'workloads';
   if (['node', 'nodes'].includes(normalized)) return 'nodes';
@@ -231,6 +232,9 @@ export function kindToResource(kind) {
 
 export function displayKind(kind) {
   const normalized = String(kind || '').trim().toLowerCase();
+  if (normalized.startsWith('customresource:')) {
+    return String(kind || '').trim().slice('customresource:'.length) || 'CustomResource';
+  }
   const labels = {
     pod: 'Pod',
     deployment: 'Deployment',

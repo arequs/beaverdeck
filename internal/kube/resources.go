@@ -249,9 +249,11 @@ func (c *Client) ListCRDs(ctx context.Context) ([]CRDInfo, error) {
 	for _, item := range items.Items {
 		group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
 		kind, _, _ := unstructured.NestedString(item.Object, "spec", "names", "kind")
+		resource, _, _ := unstructured.NestedString(item.Object, "spec", "names", "plural")
 		scope, _, _ := unstructured.NestedString(item.Object, "spec", "scope")
 		versionsRaw, found, _ := unstructured.NestedSlice(item.Object, "spec", "versions")
 		versions := make([]string, 0)
+		preferredVersion := ""
 		if found {
 			for _, raw := range versionsRaw {
 				version, ok := raw.(map[string]any)
@@ -264,6 +266,11 @@ func (c *Client) ListCRDs(ctx context.Context) ([]CRDInfo, error) {
 				}
 				served, _ := version["served"].(bool)
 				storage, _ := version["storage"].(bool)
+				if storage && served {
+					preferredVersion = name
+				} else if served && preferredVersion == "" {
+					preferredVersion = name
+				}
 				switch {
 				case storage:
 					versions = append(versions, name+" (storage)")
@@ -278,6 +285,8 @@ func (c *Client) ListCRDs(ctx context.Context) ([]CRDInfo, error) {
 			Name:     item.GetName(),
 			Group:    group,
 			Kind:     kind,
+			Resource: resource,
+			Version:  preferredVersion,
 			Scope:    scope,
 			Versions: strings.Join(versions, ", "),
 			Age:      age(item.GetCreationTimestamp().Time),
@@ -285,6 +294,82 @@ func (c *Client) ListCRDs(ctx context.Context) ([]CRDInfo, error) {
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (c *Client) ResolveCustomResourceDefinition(ctx context.Context, name string) (CustomResourceDefinition, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return CustomResourceDefinition{}, fmt.Errorf("CRD name is required")
+	}
+	item, err := c.dyn.Resource(schema.GroupVersionResource{
+		Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions",
+	}).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return CustomResourceDefinition{}, err
+	}
+	group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
+	kind, _, _ := unstructured.NestedString(item.Object, "spec", "names", "kind")
+	resource, _, _ := unstructured.NestedString(item.Object, "spec", "names", "plural")
+	scope, _, _ := unstructured.NestedString(item.Object, "spec", "scope")
+	versions, _, _ := unstructured.NestedSlice(item.Object, "spec", "versions")
+	version := ""
+	for _, raw := range versions {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := entry["name"].(string)
+		served, _ := entry["served"].(bool)
+		storage, _ := entry["storage"].(bool)
+		if served && storage {
+			version = name
+			break
+		}
+		if served && version == "" {
+			version = name
+		}
+	}
+	if group == "" || version == "" || resource == "" || kind == "" {
+		return CustomResourceDefinition{}, fmt.Errorf("CRD %s has no usable served resource", name)
+	}
+	return CustomResourceDefinition{
+		Name: name, Group: group, Version: version, Resource: resource, Kind: kind,
+		Namespaced: strings.EqualFold(scope, "Namespaced"),
+	}, nil
+}
+
+func (c *Client) ListCustomResources(ctx context.Context, definition CustomResourceDefinition, namespaces []string) ([]CustomResourceInfo, error) {
+	gvr := schema.GroupVersionResource{Group: definition.Group, Version: definition.Version, Resource: definition.Resource}
+	items := make([]unstructured.Unstructured, 0)
+	if definition.Namespaced {
+		for _, namespace := range namespaces {
+			list, err := c.dyn.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, list.Items...)
+		}
+	} else {
+		list, err := c.dyn.Resource(gvr).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, list.Items...)
+	}
+	out := make([]CustomResourceInfo, 0, len(items))
+	for _, item := range items {
+		out = append(out, CustomResourceInfo{
+			Namespace: item.GetNamespace(), Name: item.GetName(), APIVersion: item.GetAPIVersion(),
+			Kind: item.GetKind(), Age: age(item.GetCreationTimestamp().Time),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Namespace != out[j].Namespace {
+			return out[i].Namespace < out[j].Namespace
+		}
+		return out[i].Name < out[j].Name
+	})
 	return out, nil
 }
 

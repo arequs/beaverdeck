@@ -76,6 +76,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/secrets", s.secrets)
 	mux.HandleFunc("GET /api/configmaps", s.configMaps)
 	mux.HandleFunc("GET /api/crds", s.crds)
+	mux.HandleFunc("GET /api/crds/{name}/resources", s.customResources)
 	mux.HandleFunc("GET /api/services", s.services)
 	mux.HandleFunc("GET /api/clusterroles", s.clusterRoles)
 	mux.HandleFunc("GET /api/clusterrolebindings", s.clusterRoleBindings)

@@ -204,11 +204,74 @@ export function CRDsPage({
   allAllowed,
   openEditTab,
   deleteResourceByRef,
-  refreshAll
+  refreshAll,
+  selectedCRD,
+  selectedCRDGroup,
+  customResourceSearch,
+  setCustomResourceSearch,
+  sortedCustomResources,
+  customResourceDefinition,
+  selectCRDGroup
 }) {
+  if (selectedCRD) {
+    const resourceKind = `customresource:${selectedCRD.name}`;
+    return (
+      <>
+        <div className="toolbar fixed-toolbar">
+          <button className="secondary" onClick={() => selectCRDGroup('')}>All CRDs</button>
+          <button className="secondary" onClick={() => selectCRDGroup(selectedCRD.group)}>{selectedCRD.group}</button>
+          <strong>{selectedCRD.kind}</strong>
+          <span className="small-hint">{selectedCRD.name}</span>
+          <input
+            value={customResourceSearch}
+            onChange={(e) => setCustomResourceSearch(e.target.value)}
+            placeholder={`Search ${selectedCRD.kind} resources...`}
+          />
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><button className="sort-btn" onClick={() => toggleSort('customresources', 'name')}>Name {sortMark('customresources', 'name')}</button></th>
+                {customResourceDefinition?.namespaced ? (
+                  <th><button className="sort-btn" onClick={() => toggleSort('customresources', 'namespace')}>Namespace {sortMark('customresources', 'namespace')}</button></th>
+                ) : null}
+                <th><button className="sort-btn" onClick={() => toggleSort('customresources', 'api_version')}>API Version {sortMark('customresources', 'api_version')}</button></th>
+                <th><button className="sort-btn" onClick={() => toggleSort('customresources', 'age')}>Age {sortMark('customresources', 'age')}</button></th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedCustomResources.map((item) => (
+                <tr key={`${item.namespace || '_cluster'}/${item.name}`}>
+                  <td>{item.name}</td>
+                  {customResourceDefinition?.namespaced ? <td>{item.namespace}</td> : null}
+                  <td>{item.api_version}</td>
+                  <td>{item.age}</td>
+                  <td className="actions-cell">
+                    <ActionMenu actions={[
+                      makeAction('Manifest', permissionInfo('crds', 'view', item.namespace), () => safe(() => openManifestTab(item.namespace || '', resourceKind, item.name))),
+                      makeAction('Edit', permissionInfo('crds', 'edit', item.namespace), () => safe(() => openEditTab(item.namespace || '', resourceKind, item.name))),
+                      makeAction('Delete', permissionInfo('crds', 'delete', item.namespace), () => safe(async () => {
+                        await deleteResourceByRef(resourceKind, item.namespace || '', item.name);
+                        await refreshAll();
+                      }))
+                    ]} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {sortedCustomResources.length === 0 ? <div className="empty-state">No resources found.</div> : null}
+        </div>
+      </>
+    );
+  }
   return (
     <>
     <div className="toolbar fixed-toolbar">
+      {selectedCRDGroup ? <button className="secondary" onClick={() => selectCRDGroup('')}>All CRDs</button> : null}
+      {selectedCRDGroup ? <strong>{selectedCRDGroup}</strong> : null}
       <input value={crdSearch} onChange={(e) => setCRDSearch(e.target.value)} placeholder="Search CRDs..." />
     </div>
     <div className="table-wrap">

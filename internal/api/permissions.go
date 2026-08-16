@@ -168,6 +168,9 @@ func (s *Server) requirePermission(w http.ResponseWriter, r *http.Request, resou
 }
 
 func kindToResource(kind string) string {
+	if _, ok := customResourceCRDName(kind); ok {
+		return "crds"
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod", "pods":
 		return "pods"
@@ -200,6 +203,17 @@ func kindToResource(kind string) string {
 	default:
 		return ""
 	}
+}
+
+const customResourceKindPrefix = "customresource:"
+
+func customResourceCRDName(kind string) (string, bool) {
+	normalized := strings.TrimSpace(kind)
+	if len(normalized) <= len(customResourceKindPrefix) || !strings.EqualFold(normalized[:len(customResourceKindPrefix)], customResourceKindPrefix) {
+		return "", false
+	}
+	name := strings.TrimSpace(normalized[len(customResourceKindPrefix):])
+	return name, name != ""
 }
 
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
