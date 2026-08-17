@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 
 	"beaverdeck/internal/users"
@@ -44,20 +43,7 @@ func (s *Server) adminConfigImport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	previous, err := s.users.ExportConfig(r.Context())
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := s.users.ImportConfigSnapshot(r.Context(), normalized); err != nil {
-		writeErr(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := s.users.SaveConfigSnapshot(r.Context(), normalized); err != nil {
-		if rollbackErr := s.users.ImportConfigSnapshot(r.Context(), previous); rollbackErr != nil {
-			writeErr(w, http.StatusInternalServerError, fmt.Errorf("persist imported config secret: %w; rollback runtime config: %v", err, rollbackErr))
-			return
-		}
+	if err := s.users.ReplaceConfigSnapshot(r.Context(), normalized); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}

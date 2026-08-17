@@ -33,21 +33,20 @@ func (s *Store) UpdateOIDCConfig(ctx context.Context, cfg OIDCConfig) error {
 		providerName = "OpenID Connect"
 	}
 
-	s.mu.Lock()
-	s.oidcConfig = OIDCConfig{
-		ProviderName: providerName,
-		IssuerURL:    strings.TrimSpace(cfg.IssuerURL),
-		ClientID:     strings.TrimSpace(cfg.ClientID),
-		ClientSecret: strings.TrimSpace(cfg.ClientSecret),
-		Scopes:       scopes,
-		HostedDomain: strings.TrimSpace(strings.ToLower(cfg.HostedDomain)),
-		EmailClaim:   emailClaim,
-		GroupsClaim:  groupsClaim,
-		UpdatedAt:    time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		s.oidcConfig = OIDCConfig{
+			ProviderName: providerName,
+			IssuerURL:    strings.TrimSpace(cfg.IssuerURL),
+			ClientID:     strings.TrimSpace(cfg.ClientID),
+			ClientSecret: strings.TrimSpace(cfg.ClientSecret),
+			Scopes:       scopes,
+			HostedDomain: strings.TrimSpace(strings.ToLower(cfg.HostedDomain)),
+			EmailClaim:   emailClaim,
+			GroupsClaim:  groupsClaim,
+			UpdatedAt:    time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	})
 }
 
 func (s *Store) ListOIDCGroupRoles(ctx context.Context) ([]OIDCGroupRole, error) {
@@ -72,24 +71,22 @@ func (s *Store) UpsertOIDCGroupRole(ctx context.Context, groupName string, role 
 	}
 	key := strings.ToLower(groupName)
 
-	s.mu.Lock()
-	if !s.roleExistsLocked(string(role)) {
-		s.mu.Unlock()
-		return fmt.Errorf("role does not exist: %s", role)
-	}
-	if s.oidcMappings == nil {
-		s.oidcMappings = make(map[string]OIDCGroupRole)
-	}
-	item, exists := s.oidcMappings[key]
-	if !exists {
-		item = OIDCGroupRole{GroupName: groupName, CreatedAt: time.Now().UTC()}
-	}
-	item.GroupName = groupName
-	item.Role = role
-	s.oidcMappings[key] = item
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if !s.roleExistsLocked(string(role)) {
+			return fmt.Errorf("role does not exist: %s", role)
+		}
+		if s.oidcMappings == nil {
+			s.oidcMappings = make(map[string]OIDCGroupRole)
+		}
+		item, exists := s.oidcMappings[key]
+		if !exists {
+			item = OIDCGroupRole{GroupName: groupName, CreatedAt: time.Now().UTC()}
+		}
+		item.GroupName = groupName
+		item.Role = role
+		s.oidcMappings[key] = item
+		return nil
+	})
 }
 
 func (s *Store) DeleteOIDCGroupRole(ctx context.Context, groupName string) error {
@@ -99,30 +96,27 @@ func (s *Store) DeleteOIDCGroupRole(ctx context.Context, groupName string) error
 	}
 	key := strings.ToLower(groupName)
 
-	s.mu.Lock()
-	if _, ok := s.oidcMappings[key]; !ok {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	delete(s.oidcMappings, key)
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if _, ok := s.oidcMappings[key]; !ok {
+			return sql.ErrNoRows
+		}
+		delete(s.oidcMappings, key)
+		return nil
+	})
 }
 
 func (s *Store) ResetOIDCAuth(ctx context.Context) error {
-	s.mu.Lock()
-	s.oidcConfig = OIDCConfig{
-		ProviderName: "OpenID Connect",
-		Scopes:       defaultOIDCScopes,
-		EmailClaim:   defaultOIDCEmailClaim,
-		GroupsClaim:  defaultOIDCGroupsClaim,
-		UpdatedAt:    time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	s.oidcMappings = make(map[string]OIDCGroupRole)
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		s.oidcConfig = OIDCConfig{
+			ProviderName: "OpenID Connect",
+			Scopes:       defaultOIDCScopes,
+			EmailClaim:   defaultOIDCEmailClaim,
+			GroupsClaim:  defaultOIDCGroupsClaim,
+			UpdatedAt:    time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		s.oidcMappings = make(map[string]OIDCGroupRole)
+		return nil
+	})
 }
 
 func (s *Store) ResolveOIDCRole(ctx context.Context, groups []string) (Role, string, error) {

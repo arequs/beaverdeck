@@ -29,12 +29,15 @@ spec:
         runAsGroup: 65532
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: beaverdeck
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           ports:
@@ -95,6 +98,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: {{ .Values.dataDir }}
+            - name: tmp
+              mountPath: /tmp
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -123,6 +128,8 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

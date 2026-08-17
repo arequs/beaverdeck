@@ -79,35 +79,27 @@ func (s *Store) VerifyLocalCredentials(ctx context.Context, username, password s
 		return nil, sql.ErrNoRows
 	}
 
-	var snapshotToPersist *ConfigSnapshot
-	s.mu.Lock()
+	s.mu.RLock()
 	cfgUser, ok := s.users[username]
 	if !ok {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return nil, sql.ErrNoRows
 	}
 	roleDef, ok := s.roleDefLocked(cfgUser.Role)
 	if !ok {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return nil, sql.ErrNoRows
 	}
 	passwordMatched, needsUpgrade, err := verifyLocalPassword(cfgUser.PasswordHash, password)
 	if err != nil {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return nil, err
 	}
 	if !passwordMatched {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return nil, sql.ErrNoRows
 	}
-	if needsUpgrade {
-		if passwordHash, hashErr := hashLocalPassword(password); hashErr == nil {
-			cfgUser.PasswordHash = passwordHash
-			s.users[username] = cfgUser
-			snapshot := s.snapshotLocked()
-			snapshotToPersist = &snapshot
-		}
-	}
+	previousPasswordHash := cfgUser.PasswordHash
 	sessionVersion := s.sessionVersions[cfgUser.Username]
 	if sessionVersion < 1 {
 		sessionVersion = 1
@@ -123,10 +115,20 @@ func (s *Store) VerifyLocalCredentials(ctx context.Context, username, password s
 	if len(user.Permissions) == 0 {
 		user.Permissions = json.RawMessage(`{}`)
 	}
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
-	if snapshotToPersist != nil {
-		_ = s.SaveConfigSnapshot(ctx, *snapshotToPersist)
+	if needsUpgrade {
+		if passwordHash, hashErr := hashLocalPassword(password); hashErr == nil {
+			_ = s.mutateConfigAndPersist(ctx, func() error {
+				current, exists := s.users[username]
+				if !exists || current.PasswordHash != previousPasswordHash {
+					return nil
+				}
+				current.PasswordHash = passwordHash
+				s.users[username] = current
+				return nil
+			})
+		}
 	}
 	return user, nil
 }
@@ -210,26 +212,23 @@ func (s *Store) Create(ctx context.Context, username, token string, role Role) e
 		return err
 	}
 
-	s.mu.Lock()
-	if !s.roleExistsLocked(string(role)) {
-		s.mu.Unlock()
-		return fmt.Errorf("role does not exist: %s", role)
-	}
-	if s.usernameExistsFoldedLocked(username) {
-		s.mu.Unlock()
-		return fmt.Errorf("create user: user already exists")
-	}
-	if s.users == nil {
-		s.users = make(map[string]ConfigUser)
-	}
-	if s.sessionVersions == nil {
-		s.sessionVersions = make(map[string]int64)
-	}
-	s.users[username] = ConfigUser{Username: username, Role: role, PasswordHash: passwordHash, CreatedAt: time.Now().UTC()}
-	s.sessionVersions[username] = 1
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if !s.roleExistsLocked(string(role)) {
+			return fmt.Errorf("role does not exist: %s", role)
+		}
+		if s.usernameExistsFoldedLocked(username) {
+			return fmt.Errorf("create user: user already exists")
+		}
+		if s.users == nil {
+			s.users = make(map[string]ConfigUser)
+		}
+		if s.sessionVersions == nil {
+			s.sessionVersions = make(map[string]int64)
+		}
+		s.users[username] = ConfigUser{Username: username, Role: role, PasswordHash: passwordHash, CreatedAt: time.Now().UTC()}
+		s.sessionVersions[username] = 1
+		return nil
+	})
 }
 
 func (s *Store) UpdateUserRole(ctx context.Context, username string, role Role) error {
@@ -239,25 +238,21 @@ func (s *Store) UpdateUserRole(ctx context.Context, username string, role Role) 
 		return fmt.Errorf("username is required")
 	}
 
-	s.mu.Lock()
-	if !s.roleExistsLocked(string(role)) {
-		s.mu.Unlock()
-		return fmt.Errorf("role does not exist: %s", role)
-	}
-	cfgUser, ok := s.users[username]
-	if !ok {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	if s.removesLastLocalAdminLocked(username, string(role)) {
-		s.mu.Unlock()
-		return fmt.Errorf("last local admin role cannot be changed")
-	}
-	cfgUser.Role = role
-	s.users[username] = cfgUser
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if !s.roleExistsLocked(string(role)) {
+			return fmt.Errorf("role does not exist: %s", role)
+		}
+		cfgUser, ok := s.users[username]
+		if !ok {
+			return sql.ErrNoRows
+		}
+		if s.removesLastLocalAdminLocked(username, string(role)) {
+			return fmt.Errorf("last local admin role cannot be changed")
+		}
+		cfgUser.Role = role
+		s.users[username] = cfgUser
+		return nil
+	})
 }
 
 func (s *Store) ResetLocalPassword(ctx context.Context, username, password string) error {
@@ -271,21 +266,19 @@ func (s *Store) ResetLocalPassword(ctx context.Context, username, password strin
 		return err
 	}
 
-	s.mu.Lock()
-	cfgUser, ok := s.users[username]
-	if !ok {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	cfgUser.PasswordHash = passwordHash
-	s.users[username] = cfgUser
-	if s.sessionVersions == nil {
-		s.sessionVersions = make(map[string]int64)
-	}
-	s.sessionVersions[username] = nextSessionVersion(s.sessionVersions[username])
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		cfgUser, ok := s.users[username]
+		if !ok {
+			return sql.ErrNoRows
+		}
+		cfgUser.PasswordHash = passwordHash
+		s.users[username] = cfgUser
+		if s.sessionVersions == nil {
+			s.sessionVersions = make(map[string]int64)
+		}
+		s.sessionVersions[username] = nextSessionVersion(s.sessionVersions[username])
+		return nil
+	})
 }
 
 func (s *Store) ListRoles(ctx context.Context) ([]RoleDef, error) {
@@ -324,18 +317,16 @@ func (s *Store) CreateRole(ctx context.Context, name, mode string, permissions j
 		return err
 	}
 
-	s.mu.Lock()
-	if s.roleExistsLocked(name) {
-		s.mu.Unlock()
-		return fmt.Errorf("create role: role already exists")
-	}
-	if s.roles == nil {
-		s.roles = make(map[string]RoleDef)
-	}
-	s.roles[name] = RoleDef{Name: name, Mode: mode, Permissions: permissions, CreatedAt: time.Now().UTC()}
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if s.roleExistsLocked(name) {
+			return fmt.Errorf("create role: role already exists")
+		}
+		if s.roles == nil {
+			s.roles = make(map[string]RoleDef)
+		}
+		s.roles[name] = RoleDef{Name: name, Mode: mode, Permissions: permissions, CreatedAt: time.Now().UTC()}
+		return nil
+	})
 }
 
 func (s *Store) UpdateRole(ctx context.Context, name, mode string, permissions json.RawMessage) error {
@@ -361,18 +352,16 @@ func (s *Store) UpdateRole(ctx context.Context, name, mode string, permissions j
 		return err
 	}
 
-	s.mu.Lock()
-	roleDef, exists := s.roles[name]
-	if !exists {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	roleDef.Mode = mode
-	roleDef.Permissions = permissions
-	s.roles[name] = roleDef
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		roleDef, exists := s.roles[name]
+		if !exists {
+			return sql.ErrNoRows
+		}
+		roleDef.Mode = mode
+		roleDef.Permissions = permissions
+		s.roles[name] = roleDef
+		return nil
+	})
 }
 
 func (s *Store) DeleteRole(ctx context.Context, name string) error {
@@ -384,33 +373,28 @@ func (s *Store) DeleteRole(ctx context.Context, name string) error {
 		return fmt.Errorf("admin role cannot be deleted")
 	}
 
-	s.mu.Lock()
-	if !s.roleExistsLocked(name) {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	for _, user := range s.users {
-		if string(user.Role) == name {
-			s.mu.Unlock()
-			return fmt.Errorf("role is assigned to users")
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if !s.roleExistsLocked(name) {
+			return sql.ErrNoRows
 		}
-	}
-	for _, mapping := range s.googleMappings {
-		if string(mapping.Role) == name {
-			s.mu.Unlock()
-			return fmt.Errorf("role is assigned to google group mappings")
+		for _, user := range s.users {
+			if string(user.Role) == name {
+				return fmt.Errorf("role is assigned to users")
+			}
 		}
-	}
-	for _, mapping := range s.oidcMappings {
-		if string(mapping.Role) == name {
-			s.mu.Unlock()
-			return fmt.Errorf("role is assigned to OpenID Connect group mappings")
+		for _, mapping := range s.googleMappings {
+			if string(mapping.Role) == name {
+				return fmt.Errorf("role is assigned to google group mappings")
+			}
 		}
-	}
-	delete(s.roles, name)
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+		for _, mapping := range s.oidcMappings {
+			if string(mapping.Role) == name {
+				return fmt.Errorf("role is assigned to OpenID Connect group mappings")
+			}
+		}
+		delete(s.roles, name)
+		return nil
+	})
 }
 
 func (s *Store) roleExists(ctx context.Context, name string) bool {
@@ -425,20 +409,17 @@ func (s *Store) Delete(ctx context.Context, username string) error {
 		return fmt.Errorf("username is required")
 	}
 
-	s.mu.Lock()
-	if _, ok := s.users[username]; !ok {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	if s.isLastLocalAdminLocked(username) {
-		s.mu.Unlock()
-		return fmt.Errorf("last local admin user cannot be deleted")
-	}
-	delete(s.users, username)
-	delete(s.sessionVersions, username)
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if _, ok := s.users[username]; !ok {
+			return sql.ErrNoRows
+		}
+		if s.isLastLocalAdminLocked(username) {
+			return fmt.Errorf("last local admin user cannot be deleted")
+		}
+		delete(s.users, username)
+		delete(s.sessionVersions, username)
+		return nil
+	})
 }
 
 func (s *Store) roleDefLocked(role Role) (RoleDef, bool) {

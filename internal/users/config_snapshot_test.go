@@ -2,9 +2,12 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestConfigSnapshotExportImportRoundTrip(t *testing.T) {
@@ -156,6 +159,110 @@ func TestConfigSnapshotExportImportRoundTrip(t *testing.T) {
 	}
 	if len(afterExternalLogin.Users) != 2 {
 		t.Fatalf("external session user should not be exported: %#v", afterExternalLogin.Users)
+	}
+}
+
+func TestConfigMutationRollsBackWhenPersistenceFails(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "old-password"); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "admin", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetConfigSaver(func(context.Context, ConfigSnapshot) error {
+		return errors.New("secret update failed")
+	})
+
+	if err := store.CreateRole(ctx, "ops", "viewer", []byte(`{}`)); err == nil {
+		t.Fatal("expected role persistence failure")
+	}
+	roles, err := store.ListRoles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRoleAbsent(t, roles, "ops")
+
+	if err := store.ResetLocalPassword(ctx, "admin", "new-password"); err == nil {
+		t.Fatal("expected password persistence failure")
+	}
+	if _, err := store.Authenticate(ctx, token); err != nil {
+		t.Fatalf("failed password update must not revoke the previous session: %v", err)
+	}
+	if _, err := store.VerifyLocalCredentials(ctx, "admin", "old-password"); err != nil {
+		t.Fatalf("failed password update must restore the previous password: %v", err)
+	}
+	if _, err := store.VerifyLocalCredentials(ctx, "admin", "new-password"); err == nil {
+		t.Fatal("failed password update exposed the new password")
+	}
+}
+
+func TestConfigMutationsArePersistedSequentially(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-password"); err != nil {
+		t.Fatal(err)
+	}
+
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var once sync.Once
+	store.SetConfigSaver(func(_ context.Context, snapshot ConfigSnapshot) error {
+		switch snapshot.Google.Config.ClientID {
+		case "first":
+			once.Do(func() { close(firstStarted) })
+			<-releaseFirst
+		case "second":
+			close(secondStarted)
+		}
+		return nil
+	})
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- store.UpdateGoogleConfig(ctx, GoogleConfig{ClientID: "first"})
+	}()
+	<-firstStarted
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- store.UpdateGoogleConfig(ctx, GoogleConfig{ClientID: "second"})
+	}()
+	select {
+	case <-secondStarted:
+		t.Fatal("second persistence started before the first one completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+	config, err := store.GetGoogleConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ClientID != "second" {
+		t.Fatalf("google client id = %q, want second", config.ClientID)
 	}
 }
 

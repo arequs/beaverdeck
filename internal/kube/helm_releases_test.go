@@ -19,6 +19,10 @@ func TestListHelmReleasesAndHistory(t *testing.T) {
 		helmReleaseSecret(t, "demo", "sample", 1, "superseded", "1.0.0"),
 		helmReleaseSecret(t, "demo", "sample", 2, "deployed", "1.1.0"),
 		helmReleaseConfigMap(t, "demo", "other", 3, "failed", "3.0.0"),
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "demo", Name: "sh.helm.release.v1.corrupt.v1", Labels: map[string]string{"owner": "helm"}},
+			Data:       map[string][]byte{"release": []byte("not-a-release")},
+		},
 		helmReleaseSecret(t, "restricted", "hidden", 1, "deployed", "9.0.0"),
 	)}
 
@@ -63,6 +67,17 @@ func TestListHelmReleasesAndHistory(t *testing.T) {
 	}
 	if resources != "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: sample\n" {
 		t.Fatalf("unexpected resources:\n%s", resources)
+	}
+}
+
+func TestListHelmReleasesReportsWhenEveryStoredReleaseIsCorrupt(t *testing.T) {
+	client := &Client{core: fake.NewSimpleClientset(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "demo", Name: "sh.helm.release.v1.corrupt.v1", Labels: map[string]string{"owner": "helm"}},
+		Data:       map[string][]byte{"release": []byte("not-a-release")},
+	})}
+
+	if _, err := client.ListHelmReleases(context.Background(), "demo"); err == nil {
+		t.Fatal("expected an error when every stored Helm release is corrupt")
 	}
 }
 

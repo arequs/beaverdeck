@@ -16,18 +16,17 @@ func (s *Store) GetGoogleConfig(ctx context.Context) (GoogleConfig, error) {
 }
 
 func (s *Store) UpdateGoogleConfig(ctx context.Context, cfg GoogleConfig) error {
-	s.mu.Lock()
-	s.googleConfig = GoogleConfig{
-		ClientID:            strings.TrimSpace(cfg.ClientID),
-		ClientSecret:        strings.TrimSpace(cfg.ClientSecret),
-		HostedDomain:        strings.TrimSpace(strings.ToLower(cfg.HostedDomain)),
-		ServiceAccountJSON:  strings.TrimSpace(cfg.ServiceAccountJSON),
-		DelegatedAdminEmail: strings.TrimSpace(strings.ToLower(cfg.DelegatedAdminEmail)),
-		UpdatedAt:           time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		s.googleConfig = GoogleConfig{
+			ClientID:            strings.TrimSpace(cfg.ClientID),
+			ClientSecret:        strings.TrimSpace(cfg.ClientSecret),
+			HostedDomain:        strings.TrimSpace(strings.ToLower(cfg.HostedDomain)),
+			ServiceAccountJSON:  strings.TrimSpace(cfg.ServiceAccountJSON),
+			DelegatedAdminEmail: strings.TrimSpace(strings.ToLower(cfg.DelegatedAdminEmail)),
+			UpdatedAt:           time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	})
 }
 
 func (s *Store) ListGoogleGroupRoles(ctx context.Context) ([]GoogleGroupRole, error) {
@@ -49,23 +48,21 @@ func (s *Store) UpsertGoogleGroupRole(ctx context.Context, groupEmail string, ro
 		return fmt.Errorf("google group email is required")
 	}
 
-	s.mu.Lock()
-	if !s.roleExistsLocked(string(role)) {
-		s.mu.Unlock()
-		return fmt.Errorf("role does not exist: %s", role)
-	}
-	if s.googleMappings == nil {
-		s.googleMappings = make(map[string]GoogleGroupRole)
-	}
-	item, exists := s.googleMappings[groupEmail]
-	if !exists {
-		item = GoogleGroupRole{GroupEmail: groupEmail, CreatedAt: time.Now().UTC()}
-	}
-	item.Role = role
-	s.googleMappings[groupEmail] = item
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if !s.roleExistsLocked(string(role)) {
+			return fmt.Errorf("role does not exist: %s", role)
+		}
+		if s.googleMappings == nil {
+			s.googleMappings = make(map[string]GoogleGroupRole)
+		}
+		item, exists := s.googleMappings[groupEmail]
+		if !exists {
+			item = GoogleGroupRole{GroupEmail: groupEmail, CreatedAt: time.Now().UTC()}
+		}
+		item.Role = role
+		s.googleMappings[groupEmail] = item
+		return nil
+	})
 }
 
 func (s *Store) DeleteGoogleGroupRole(ctx context.Context, groupEmail string) error {
@@ -74,24 +71,21 @@ func (s *Store) DeleteGoogleGroupRole(ctx context.Context, groupEmail string) er
 		return fmt.Errorf("google group email is required")
 	}
 
-	s.mu.Lock()
-	if _, ok := s.googleMappings[groupEmail]; !ok {
-		s.mu.Unlock()
-		return sql.ErrNoRows
-	}
-	delete(s.googleMappings, groupEmail)
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		if _, ok := s.googleMappings[groupEmail]; !ok {
+			return sql.ErrNoRows
+		}
+		delete(s.googleMappings, groupEmail)
+		return nil
+	})
 }
 
 func (s *Store) ResetGoogleAuth(ctx context.Context) error {
-	s.mu.Lock()
-	s.googleConfig = GoogleConfig{UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	s.googleMappings = make(map[string]GoogleGroupRole)
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	return s.mutateConfigAndPersist(ctx, func() error {
+		s.googleConfig = GoogleConfig{UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		s.googleMappings = make(map[string]GoogleGroupRole)
+		return nil
+	})
 }
 
 func (s *Store) ResolveGoogleRole(ctx context.Context, groups []string) (Role, string, error) {

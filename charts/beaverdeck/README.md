@@ -62,7 +62,7 @@ BeaverDeck stores auth configuration in a Kubernetes Secret and uses persistence
 
 ```bash
 helm upgrade --install beaverdeck oci://ghcr.io/arequs/charts/beaverdeck \
-  --version 2.2.4 \
+  --version 2.2.5 \
   --namespace beaverdeck \
   --create-namespace \
   --set clusterName=your-cluster-name
@@ -182,7 +182,7 @@ Generate a local user password hash with the BeaverDeck image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.5.3 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.0 hash-password
 unset BDPASS
 ```
 
@@ -228,6 +228,10 @@ Group mappings can use the group object ID, display name, mail address, or secur
 
 - The chart does not create a `Namespace` object. Use `--namespace` and `--create-namespace` during install if needed.
 - The RBAC installed by this chart is cluster-scoped because BeaverDeck needs access to cluster-wide resources such as nodes, PVs, CRDs, storage classes, and metrics endpoints.
+- Arbitrary custom-resource operations require the generated ClusterRole's wildcard get/list/create/update/patch/delete rule. Review or replace this rule when that scope does not match your cluster trust model.
+- Restart Diagnostics is enabled by default and stores one latest Kubernetes Secret per affected pod. Snapshots can contain previous application logs; disable it with `restartDiagnostics.enabled=false` when this is not acceptable.
+- Applications permissions are not granted implicitly. Existing roles must receive `applications: view` or `applications: edit` before Helm Releases or Argo CD Applications become visible.
+- The pod runs with `RuntimeDefault` seccomp and a read-only root filesystem; `/data` and `/tmp` remain writable volumes.
 - `clusterName` is displayed in the UI header. Set it explicitly to a human-readable cluster name.
 - `persistence.enabled=true` is optional and only preserves non-auth runtime metadata across pod restarts.
 
@@ -261,7 +265,7 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `fullnameOverride` | `""` | Full override for generated resource names. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `image.repository` | `arequs/beaverdeck` | Container image repository. |
-| `image.tag` | `1.5.3` | Container image tag. |
+| `image.tag` | `1.6.0` | Container image tag. |
 | `ingress.annotations` | `{}` | Ingress annotations. |
 | `ingress.className` | `""` | Ingress class name. |
 | `ingress.enabled` | `false` | Render a single Ingress resource for BeaverDeck. |
@@ -281,7 +285,7 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `persistence.accessModes` | `["ReadWriteOnce"]` | PVC access modes. |
 | `persistence.enabled` | `false` | Use a PersistentVolumeClaim instead of `emptyDir` for non-auth runtime metadata. |
 | `persistence.size` | `1Gi` | PVC size request. |
-| `persistence.storageClass` | `default` | StorageClass name for the PVC. Replace with the class available in your cluster. |
+| `persistence.storageClass` | `""` | StorageClass name for the PVC. Empty uses the cluster default. |
 | `podAnnotations` | `{}` | Extra pod annotations. |
 | `podLabels` | `{}` | Extra pod labels. |
 | `rbac.clusterRoleName` | `""` | Override ClusterRole name. If empty, the chart fullname is used. |

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -222,16 +221,6 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	writeErr(w, http.StatusForbidden, fmt.Errorf("admin role required"))
 	return false
-}
-
-func (s *Server) logMutation(ctx context.Context, action, namespace, resource, name string, dryRun bool, err error) {
-	_ = ctx
-	_ = action
-	_ = namespace
-	_ = resource
-	_ = name
-	_ = dryRun
-	_ = err
 }
 
 func stringsTrimOrFallback(primary, fallback string) string {

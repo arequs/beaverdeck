@@ -15,6 +15,13 @@ import (
 	"beaverdeck/internal/kube"
 )
 
+const (
+	defaultLogTailLines         = 200
+	maxLogTailLines             = 10_000
+	maxLogStreamLineBytes       = 1024 * 1024
+	maxNamespaceListConcurrency = 8
+)
+
 func (s *Server) namespaces(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.AllowAllNamespaces {
 		items := []string{s.cfg.ManagedNamespace}
@@ -567,10 +574,7 @@ func (s *Server) podLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	container := strings.TrimSpace(r.URL.Query().Get("container"))
-	tail, _ := strconv.ParseInt(r.URL.Query().Get("tail"), 10, 64)
-	if tail <= 0 {
-		tail = 200
-	}
+	tail := requestedLogTail(r)
 	follow := strings.EqualFold(r.URL.Query().Get("follow"), "1") || strings.EqualFold(r.URL.Query().Get("follow"), "true")
 
 	if !follow {
@@ -601,8 +605,13 @@ func (s *Server) podLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scanner := bufio.NewScanner(stream)
+	scanner.Buffer(make([]byte, 64*1024), maxLogStreamLineBytes)
 	for scanner.Scan() {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", sanitizeSSE(scanner.Text()))
+		flusher.Flush()
+	}
+	if err := scanner.Err(); err != nil {
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", sanitizeSSE(err.Error()))
 		flusher.Flush()
 	}
 }
@@ -622,10 +631,7 @@ func (s *Server) workloadLogs(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("kind and name are required"))
 		return
 	}
-	tail, _ := strconv.ParseInt(r.URL.Query().Get("tail"), 10, 64)
-	if tail <= 0 {
-		tail = 200
-	}
+	tail := requestedLogTail(r)
 	text, err := s.kube.WorkloadLogs(r.Context(), ns, kind, name, tail)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
@@ -633,6 +639,17 @@ func (s *Server) workloadLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(text))
+}
+
+func requestedLogTail(r *http.Request) int64 {
+	tail, _ := strconv.ParseInt(r.URL.Query().Get("tail"), 10, 64)
+	if tail <= 0 {
+		return defaultLogTailLines
+	}
+	if tail > maxLogTailLines {
+		return maxLogTailLines
+	}
+	return tail
 }
 
 func (s *Server) namespaceFromQuery(r *http.Request) (string, bool) {
@@ -679,20 +696,35 @@ func writeNamespacedList[T any](
 		firstErr error
 		errOnce  sync.Once
 	)
+	type namespaceJob struct {
+		index     int
+		namespace string
+	}
+	jobs := make(chan namespaceJob, len(nsList))
 	for i, ns := range nsList {
+		jobs <- namespaceJob{index: i, namespace: ns}
+	}
+	close(jobs)
+	workerCount := min(len(nsList), maxNamespaceListConcurrency)
+	for range workerCount {
 		wg.Add(1)
-		go func(index int, namespace string) {
+		go func() {
 			defer wg.Done()
-			nsItems, err := fetch(ctx, namespace)
-			if err != nil {
-				errOnce.Do(func() {
-					firstErr = err
-					cancel()
-				})
-				return
+			for job := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				nsItems, err := fetch(ctx, job.namespace)
+				if err != nil {
+					errOnce.Do(func() {
+						firstErr = err
+						cancel()
+					})
+					return
+				}
+				chunks[job.index] = nsItems
 			}
-			chunks[index] = nsItems
-		}(i, ns)
+		}()
 	}
 	wg.Wait()
 	if firstErr != nil {

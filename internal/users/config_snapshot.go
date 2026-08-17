@@ -282,17 +282,26 @@ func (s *Store) PersistConfig(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
-	snapshot, err := s.ExportConfig(ctx)
-	if err != nil {
-		return err
-	}
-	return s.SaveConfigSnapshot(ctx, snapshot)
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+
+	s.mu.RLock()
+	snapshot := s.snapshotLocked()
+	snapshot.ExportedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	s.mu.RUnlock()
+	return s.saveConfigSnapshot(ctx, snapshot)
 }
 
 func (s *Store) SaveConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error {
 	if s == nil {
 		return nil
 	}
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+	return s.saveConfigSnapshot(ctx, snapshot)
+}
+
+func (s *Store) saveConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error {
 	s.configSaverMu.RLock()
 	save := s.configSaver
 	s.configSaverMu.RUnlock()
@@ -322,8 +331,59 @@ func (s *Store) ImportConfigSnapshot(ctx context.Context, snapshot ConfigSnapsho
 	return s.replaceConfig(ctx, normalized)
 }
 
+// ReplaceConfigSnapshot persists a validated snapshot and only exposes it to
+// readers after durable storage accepts it. It is intended for runtime imports;
+// startup restoration should continue to use ImportConfigSnapshot.
+func (s *Store) ReplaceConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error {
+	normalized, err := NormalizeConfigSnapshot(snapshot)
+	if err != nil {
+		return err
+	}
+	return s.mutateConfigAndPersist(ctx, func() error {
+		s.applyConfigSnapshotLocked(normalized)
+		return nil
+	})
+}
+
 func (s *Store) ResetToEmptyConfig(ctx context.Context) error {
 	return s.replaceConfig(ctx, defaultConfigSnapshot(time.Now().UTC()))
+}
+
+// mutateConfigAndPersist serializes configuration changes, keeps readers from
+// observing uncommitted state and restores both configuration and session
+// versions if the external persistence callback fails.
+func (s *Store) mutateConfigAndPersist(ctx context.Context, mutate func() error) error {
+	if s == nil {
+		return nil
+	}
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous := s.snapshotLocked()
+	previousSessionVersions := cloneSessionVersions(s.sessionVersions)
+	if err := mutate(); err != nil {
+		return err
+	}
+	next := s.snapshotLocked()
+	if err := s.saveConfigSnapshot(ctx, next); err != nil {
+		s.applyConfigSnapshotLocked(previous)
+		s.sessionVersions = previousSessionVersions
+		return err
+	}
+	return nil
+}
+
+func cloneSessionVersions(input map[string]int64) map[string]int64 {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]int64, len(input))
+	for username, version := range input {
+		out[username] = version
+	}
+	return out
 }
 
 func NormalizeConfigSnapshot(snapshot ConfigSnapshot) (ConfigSnapshot, error) {

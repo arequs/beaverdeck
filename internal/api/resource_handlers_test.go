@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"embed"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"beaverdeck/internal/auth"
 	"beaverdeck/internal/config"
@@ -40,6 +42,113 @@ func TestManifestPermissionAction(t *testing.T) {
 				t.Fatalf("manifest permission for %s = %q, want %q", tt.resource, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRequestedLogTailBounds(t *testing.T) {
+	tests := []struct {
+		query string
+		want  int64
+	}{
+		{query: "", want: defaultLogTailLines},
+		{query: "?tail=0", want: defaultLogTailLines},
+		{query: "?tail=250", want: 250},
+		{query: "?tail=999999999", want: maxLogTailLines},
+	}
+	for _, tt := range tests {
+		request := httptest.NewRequest(http.MethodGet, "/api/podlogs"+tt.query, nil)
+		if got := requestedLogTail(request); got != tt.want {
+			t.Fatalf("requestedLogTail(%q) = %d, want %d", tt.query, got, tt.want)
+		}
+	}
+}
+
+func TestAPIRequestBodyLimit(t *testing.T) {
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.ResetToEmptyConfig(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(context.Background(), "admin", "admin-password"); err != nil {
+		t.Fatal(err)
+	}
+	server := New(config.Config{}, nil, store, embed.FS{})
+	body := `{"username":"` + strings.Repeat("x", maxAPIRequestBodyBytes) + `","password":"secret"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(response.Body.String()), "too large") {
+		t.Fatalf("expected body size error, got: %s", response.Body.String())
+	}
+}
+
+func TestNamespacedListConcurrencyIsBounded(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-password"); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "admin", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{AllowAllNamespaces: true}, nil, store, embed.FS{})
+	started := make(chan struct{}, maxNamespaceListConcurrency*2)
+	release := make(chan struct{})
+	handler := auth.Middleware(store)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeNamespacedList(server, w, r, "pods", func(_ context.Context, namespace string) ([]string, error) {
+			started <- struct{}{}
+			<-release
+			return []string{namespace}, nil
+		}, func(a, b string) bool { return a < b })
+	}))
+	namespaces := make([]string, maxNamespaceListConcurrency*2)
+	for i := range namespaces {
+		namespaces[i] = fmt.Sprintf("ns-%02d", i)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/?namespace="+strings.Join(namespaces, ","), nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-BeaverDeck-Username", "admin")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, request)
+		close(done)
+	}()
+
+	for range maxNamespaceListConcurrency {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for namespaced list workers")
+		}
+	}
+	select {
+	case <-started:
+		t.Fatal("namespaced list exceeded its concurrency limit")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	<-done
+	if response.Code != http.StatusOK {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
 	}
 }
 

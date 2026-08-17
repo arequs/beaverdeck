@@ -19,6 +19,8 @@ type Server struct {
 	fs    http.FileSystem
 }
 
+const maxAPIRequestBodyBytes = 4 * 1024 * 1024
+
 func New(cfg config.Config, kc *kube.Client, userStore *users.Store, webFS embed.FS) *Server {
 	sub, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
@@ -125,5 +127,10 @@ func (s *Server) Routes() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	}))
 
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBodyBytes)
+		}
+		mux.ServeHTTP(w, r)
+	})
 }

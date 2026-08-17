@@ -9,6 +9,8 @@ import (
 
 	"beaverdeck/internal/kube"
 	"github.com/gorilla/websocket"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
 type scaleRequest struct {
@@ -149,7 +151,6 @@ func (s *Server) scaleDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.kube.ScaleDeployment(r.Context(), req.Namespace, req.Name, req.Replicas)
-	s.logMutation(r.Context(), "scale", req.Namespace, "deployment", req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -171,7 +172,6 @@ func (s *Server) scaleStatefulSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.kube.ScaleStatefulSet(r.Context(), req.Namespace, req.Name, req.Replicas)
-	s.logMutation(r.Context(), "scale", req.Namespace, "statefulset", req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -193,7 +193,6 @@ func (s *Server) restartDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.kube.RestartDeployment(r.Context(), req.Namespace, req.Name)
-	s.logMutation(r.Context(), "restart", req.Namespace, "deployment", req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -215,7 +214,6 @@ func (s *Server) deletePod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.kube.DeletePod(r.Context(), req.Namespace, req.Name)
-	s.logMutation(r.Context(), "delete", req.Namespace, "pod", req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -252,7 +250,6 @@ func (s *Server) deleteResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = s.kube.DeleteResource(r.Context(), req.Namespace, req.Kind, req.Name)
-	s.logMutation(r.Context(), "delete", req.Namespace, strings.ToLower(strings.TrimSpace(req.Kind)), req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -274,7 +271,6 @@ func (s *Server) evictPod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.kube.EvictPod(r.Context(), req.Namespace, req.Name)
-	s.logMutation(r.Context(), "evict", req.Namespace, "pod", req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -370,7 +366,6 @@ func (s *Server) uncordonNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.kube.SetNodeUnschedulable(r.Context(), req.Name, false)
-	s.logMutation(r.Context(), "uncordon", "", "node", req.Name, false, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -391,8 +386,11 @@ func (s *Server) applyYAML(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
 		return
 	}
+	if err := validateApplyNamespaces(req.YAML, req.Namespace); err != nil {
+		writeErr(w, http.StatusForbidden, err)
+		return
+	}
 	results, err := s.kube.ApplyYAML(r.Context(), req.Namespace, req.YAML, req.FieldManager, req.DryRun)
-	s.logMutation(r.Context(), "apply", req.Namespace, "manifest", "bulk", req.DryRun, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -443,10 +441,35 @@ func (s *Server) updateManifest(w http.ResponseWriter, r *http.Request) {
 		req.YAML,
 		req.DryRun,
 	)
-	s.logMutation(r.Context(), "update", req.Namespace, resource, req.Name, req.DryRun, err)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": []any{result}, "dryRun": req.DryRun})
+}
+
+func validateApplyNamespaces(docs, requestNamespace string) error {
+	requestNamespace = strings.TrimSpace(requestNamespace)
+	decoder := k8syaml.NewYAMLOrJSONDecoder(strings.NewReader(docs), 4096)
+	for {
+		var raw map[string]interface{}
+		err := decoder.Decode(&raw)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("decode yaml: %w", err)
+		}
+		if len(raw) == 0 {
+			continue
+		}
+		namespace, _, err := unstructured.NestedString(raw, "metadata", "namespace")
+		if err != nil {
+			return fmt.Errorf("read manifest namespace: %w", err)
+		}
+		namespace = strings.TrimSpace(namespace)
+		if namespace != "" && namespace != requestNamespace {
+			return fmt.Errorf("manifest namespace %q does not match selected namespace %q", namespace, requestNamespace)
+		}
+	}
 }

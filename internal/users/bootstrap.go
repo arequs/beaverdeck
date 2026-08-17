@@ -57,29 +57,27 @@ func (s *Store) CompleteBootstrap(ctx context.Context, adminUsername, adminPassw
 		return err
 	}
 
-	s.mu.Lock()
-	s.ensureDefaultsLocked(time.Now().UTC())
-	if s.hasLocalAdminLocked() {
-		s.mu.Unlock()
-		return fmt.Errorf("application is already initialized")
-	}
+	return s.mutateConfigAndPersist(ctx, func() error {
+		s.ensureDefaultsLocked(time.Now().UTC())
+		if s.hasLocalAdminLocked() {
+			return fmt.Errorf("application is already initialized")
+		}
 
-	if s.users == nil {
-		s.users = make(map[string]ConfigUser)
-	}
-	if s.sessionVersions == nil {
-		s.sessionVersions = make(map[string]int64)
-	}
-	s.users[adminUsername] = ConfigUser{
-		Username:     adminUsername,
-		Role:         RoleAdmin,
-		PasswordHash: passwordHash,
-		CreatedAt:    time.Now().UTC(),
-	}
-	s.sessionVersions[adminUsername] = nextSessionVersion(s.sessionVersions[adminUsername])
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.SaveConfigSnapshot(ctx, snapshot)
+		if s.users == nil {
+			s.users = make(map[string]ConfigUser)
+		}
+		if s.sessionVersions == nil {
+			s.sessionVersions = make(map[string]int64)
+		}
+		s.users[adminUsername] = ConfigUser{
+			Username:     adminUsername,
+			Role:         RoleAdmin,
+			PasswordHash: passwordHash,
+			CreatedAt:    time.Now().UTC(),
+		}
+		s.sessionVersions[adminUsername] = nextSessionVersion(s.sessionVersions[adminUsername])
+		return nil
+	})
 }
 
 func nextSessionVersion(current int64) int64 {

@@ -169,7 +169,7 @@
         },
         "storageClass": {
           "type": "string",
-          "description": "StorageClass name for the PVC."
+          "description": "StorageClass name for the PVC. Leave empty to use the cluster default."
         }
       },
       "required": ["enabled", "accessModes", "size", "storageClass"]

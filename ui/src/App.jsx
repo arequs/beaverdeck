@@ -1603,7 +1603,6 @@ export default function App() {
         }
         const [
           workloadData,
-          podData,
           healthPodData,
           nodeData,
           eventData,
@@ -1614,7 +1613,6 @@ export default function App() {
           storageClassData
         ] = await Promise.all([
           api(`/api/workloads?namespace=${encodeURIComponent(namespaceQuery)}`),
-          api(`/api/pods?namespace=${encodeURIComponent(namespaceQuery)}`),
           api(`/api/pods?namespace=${encodeURIComponent(namespaceQuery)}&include_metrics=1`),
           api('/api/nodes'),
           api(`/api/events?namespace=${encodeURIComponent(namespaceQuery)}&limit=200`),
@@ -1625,7 +1623,7 @@ export default function App() {
           api('/api/storageclasses')
         ]);
         setWorkloads(workloadData.items || []);
-        setPods(podData.items || []);
+        setPods(healthPodData.items || []);
         setHealthPods(healthPodData.items || []);
         setNodes(nodeData.items || []);
         setEvents(eventData.items || []);

@@ -15,7 +15,10 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-const helmReleaseLabelSelector = "owner=helm"
+const (
+	helmReleaseLabelSelector   = "owner=helm"
+	maxHelmReleaseDecodedBytes = 32 * 1024 * 1024
+)
 
 type storedHelmChart struct {
 	Metadata struct {
@@ -112,10 +115,14 @@ func (c *Client) listStoredHelmReleases(ctx context.Context, namespace string) (
 	}
 	seen := make(map[string]struct{})
 	out := make([]storedHelmRelease, 0, len(encoded))
+	var firstDecodeErr error
 	for _, releaseData := range encoded {
 		release, err := decodeStoredHelmRelease(releaseData)
 		if err != nil {
-			return nil, fmt.Errorf("decode Helm release in %s: %w", namespace, err)
+			if firstDecodeErr == nil {
+				firstDecodeErr = err
+			}
+			continue
 		}
 		if release.Namespace == "" {
 			release.Namespace = namespace
@@ -126,6 +133,9 @@ func (c *Client) listStoredHelmReleases(ctx context.Context, namespace string) (
 		}
 		seen[key] = struct{}{}
 		out = append(out, release)
+	}
+	if len(out) == 0 && firstDecodeErr != nil {
+		return nil, fmt.Errorf("decode Helm releases in %s: %w", namespace, firstDecodeErr)
 	}
 	return out, nil
 }
@@ -147,13 +157,16 @@ func decodeStoredHelmRelease(encoded []byte) (storedHelmRelease, error) {
 	if err != nil {
 		return storedHelmRelease{}, fmt.Errorf("gzip: %w", err)
 	}
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(io.LimitReader(reader, maxHelmReleaseDecodedBytes+1))
 	closeErr := reader.Close()
 	if err != nil {
 		return storedHelmRelease{}, fmt.Errorf("read gzip: %w", err)
 	}
 	if closeErr != nil {
 		return storedHelmRelease{}, fmt.Errorf("close gzip: %w", closeErr)
+	}
+	if len(data) > maxHelmReleaseDecodedBytes {
+		return storedHelmRelease{}, fmt.Errorf("decoded release exceeds %d bytes", maxHelmReleaseDecodedBytes)
 	}
 	var stored storedHelmRelease
 	if err := json.Unmarshal(data, &stored); err != nil {

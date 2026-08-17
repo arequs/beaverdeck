@@ -25,6 +25,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const maxLogResponseBytes = 16 * 1024 * 1024
+
 func (c *Client) ListClusterRoles(ctx context.Context) ([]ClusterRoleInfo, error) {
 	items, err := c.core.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -121,9 +123,17 @@ func (c *Client) PodLogs(ctx context.Context, ns, pod, container string, tail in
 		return "", err
 	}
 	req := c.core.CoreV1().Pods(ns).GetLogs(pod, &corev1.PodLogOptions{Container: container, TailLines: &tail})
-	b, err := req.DoRaw(ctx)
+	stream, err := req.Stream(ctx)
 	if err != nil {
 		return "", err
+	}
+	defer stream.Close()
+	b, err := io.ReadAll(io.LimitReader(stream, maxLogResponseBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(b) > maxLogResponseBytes {
+		b = append(b[:maxLogResponseBytes], []byte("\n[output truncated by BeaverDeck]\n")...)
 	}
 	return string(b), nil
 }
@@ -227,6 +237,16 @@ func (c *Client) WorkloadLogs(ctx context.Context, ns, kind, name string, tail i
 			b.WriteString(logErr.Error())
 			b.WriteString("\n\n")
 			continue
+		}
+		remaining := maxLogResponseBytes - b.Len()
+		if remaining <= 0 {
+			b.WriteString("[output truncated by BeaverDeck]\n")
+			break
+		}
+		if len(text) > remaining {
+			b.WriteString(text[:remaining])
+			b.WriteString("\n[output truncated by BeaverDeck]\n")
+			break
 		}
 		b.WriteString(text)
 		if !strings.HasSuffix(text, "\n") {

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: BeaverDeck API
-  version: 1.4.0
+  version: 1.6.0
 servers:
   - url: /
 security:
@@ -81,6 +81,3 @@ paths:
       requestBody:
         required: true
       responses: { '200': { description: Apply result } }
-  /api/audit:
-    get:
-      responses: { '200': { description: Audit entries } }
