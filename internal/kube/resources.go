@@ -167,18 +167,27 @@ func (c *Client) ListPods(ctx context.Context, ns string, includeMetrics bool) (
 		dcgmMetrics = c.collectDCGMMetrics(ctx)
 	}
 
+	workloads := c.podWorkloadRefs(ctx, ns, pods.Items)
 	out := make([]PodInfo, 0, len(pods.Items))
 	for _, p := range pods.Items {
 		var (
 			ready    int
 			restarts int32
 		)
+		containerRestarts := make([]ContainerRestartInfo, 0, len(p.Status.ContainerStatuses)+len(p.Status.InitContainerStatuses))
 		for _, cs := range p.Status.ContainerStatuses {
 			if cs.Ready {
 				ready++
 			}
 			restarts += cs.RestartCount
+			containerRestarts = append(containerRestarts, ContainerRestartInfo{Name: cs.Name, Restarts: cs.RestartCount})
 		}
+		for _, cs := range p.Status.InitContainerStatuses {
+			restarts += cs.RestartCount
+			containerRestarts = append(containerRestarts, ContainerRestartInfo{Name: cs.Name, Restarts: cs.RestartCount, Init: true})
+		}
+		sort.Slice(containerRestarts, func(i, j int) bool { return containerRestarts[i].Name < containerRestarts[j].Name })
+		workload := workloads[p.Name]
 		reqCPU, limCPU, reqMem, limMem := podResourceTotals(&p)
 		gpuRequestCount := podGPURequestCount(&p)
 		gpuUsage := dcgmMetrics.podUsage[ns+"/"+p.Name]
@@ -191,14 +200,18 @@ func (c *Client) ListPods(ctx context.Context, ns string, includeMetrics bool) (
 			memoryDisplay = formatByteUsageUnknown(metricsAvailable, usage.memoryBytes, limMem)
 		}
 		out = append(out, PodInfo{
-			Namespace:           ns,
+			Namespace:           p.Namespace,
 			Name:                p.Name,
-			Phase:               string(p.Status.Phase),
+			UID:                 p.UID,
+			Phase:               podDisplayStatus(&p),
 			Ready:               fmt.Sprintf("%d/%d", ready, len(p.Status.ContainerStatuses)),
 			Restarts:            restarts,
 			Age:                 age(p.CreationTimestamp.Time),
 			Node:                p.Spec.NodeName,
 			Containers:          podContainerNames(&p),
+			ContainerRestarts:   containerRestarts,
+			WorkloadKind:        workload.Kind,
+			WorkloadName:        workload.Name,
 			MetricsAvailable:    metricsAvailable,
 			CPU:                 cpuDisplay,
 			CPUUsedMilli:        usage.cpuMilli,
@@ -221,6 +234,96 @@ func (c *Client) ListPods(ctx context.Context, ns string, includeMetrics bool) (
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+func podDisplayStatus(pod *corev1.Pod) string {
+	if pod == nil {
+		return "Unknown"
+	}
+	if pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
+		return "Terminating"
+	}
+	if strings.TrimSpace(pod.Status.Reason) != "" {
+		return pod.Status.Reason
+	}
+
+	statuses := append([]corev1.ContainerStatus(nil), pod.Status.InitContainerStatuses...)
+	statuses = append(statuses, pod.Status.ContainerStatuses...)
+	for _, status := range statuses {
+		if status.Ready {
+			continue
+		}
+		if terminated := status.LastTerminationState.Terminated; terminated != nil && strings.EqualFold(terminated.Reason, "OOMKilled") {
+			return "OOMKilled"
+		}
+	}
+	for _, status := range statuses {
+		if status.Ready {
+			continue
+		}
+		if waiting := status.State.Waiting; waiting != nil && strings.TrimSpace(waiting.Reason) != "" {
+			return waiting.Reason
+		}
+		if terminated := status.State.Terminated; terminated != nil && strings.TrimSpace(terminated.Reason) != "" && terminated.ExitCode != 0 {
+			return terminated.Reason
+		}
+		if terminated := status.LastTerminationState.Terminated; terminated != nil && status.RestartCount > 0 && strings.TrimSpace(terminated.Reason) != "" {
+			return terminated.Reason
+		}
+	}
+	if pod.Status.Phase == "" {
+		return "Unknown"
+	}
+	return string(pod.Status.Phase)
+}
+
+func (c *Client) podWorkloadRefs(ctx context.Context, namespace string, pods []corev1.Pod) map[string]RestartDiagnosticWorkload {
+	result := make(map[string]RestartDiagnosticWorkload, len(pods))
+	needsReplicaSets := false
+	needsJobs := false
+	for i := range pods {
+		owner := controllerOwner(pods[i].OwnerReferences)
+		if owner == nil {
+			result[pods[i].Name] = RestartDiagnosticWorkload{Kind: "Pod", Name: pods[i].Name}
+			continue
+		}
+		result[pods[i].Name] = RestartDiagnosticWorkload{Kind: owner.Kind, Name: owner.Name}
+		needsReplicaSets = needsReplicaSets || owner.Kind == "ReplicaSet"
+		needsJobs = needsJobs || owner.Kind == "Job"
+	}
+	replicaSetParents := map[string]RestartDiagnosticWorkload{}
+	if needsReplicaSets {
+		if items, err := c.core.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+			for _, item := range items.Items {
+				if owner := controllerOwner(item.OwnerReferences); owner != nil && owner.Kind == "Deployment" {
+					replicaSetParents[item.Name] = RestartDiagnosticWorkload{Kind: owner.Kind, Name: owner.Name}
+				}
+			}
+		}
+	}
+	jobParents := map[string]RestartDiagnosticWorkload{}
+	if needsJobs {
+		if items, err := c.core.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+			for _, item := range items.Items {
+				if owner := controllerOwner(item.OwnerReferences); owner != nil && owner.Kind == "CronJob" {
+					jobParents[item.Name] = RestartDiagnosticWorkload{Kind: owner.Kind, Name: owner.Name}
+				}
+			}
+		}
+	}
+	for i := range pods {
+		workload := result[pods[i].Name]
+		if workload.Kind == "ReplicaSet" {
+			if parent, ok := replicaSetParents[workload.Name]; ok {
+				result[pods[i].Name] = parent
+			}
+		} else if workload.Kind == "Job" {
+			if parent, ok := jobParents[workload.Name]; ok {
+				result[pods[i].Name] = parent
+			}
+		}
+	}
+	return result
 }
 
 func podContainerNames(pod *corev1.Pod) []string {

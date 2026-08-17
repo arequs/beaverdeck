@@ -23,6 +23,7 @@ import HelmReleasesPage from './components/HelmReleasesPage.jsx';
 import InsightsPage from './components/InsightsPage.jsx';
 import NodesPage from './components/NodesPage.jsx';
 import PodsPage from './components/PodsPage.jsx';
+import RestartDiagnosticModal from './components/RestartDiagnosticModal.jsx';
 import { ClusterRolesPage, NamespacedRolesPage, ServiceAccountsPage } from './components/RbacPages.jsx';
 import {
   CRDsPage,
@@ -184,6 +185,7 @@ export default function App() {
 
   const [workloads, setWorkloads] = useState([]);
   const [pods, setPods] = useState([]);
+  const [restartDiagnostics, setRestartDiagnostics] = useState([]);
   const [healthPods, setHealthPods] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [events, setEvents] = useState([]);
@@ -286,6 +288,7 @@ export default function App() {
   const [podStatusFilter, setPodStatusFilter] = useState('');
   const [selectedPod, setSelectedPod] = useState(null);
   const [selectedPodRefs, setSelectedPodRefs] = useState([]);
+  const [restartDiagnosticModal, setRestartDiagnosticModal] = useState({ open: false, loading: false, error: '', snapshot: null });
 
   const [deploymentName, setDeploymentName] = useState('');
   const [deploymentNamespace, setDeploymentNamespace] = useState('');
@@ -377,6 +380,7 @@ export default function App() {
       setInitialNavLoading('');
       setWorkloads([]);
       setPods([]);
+      setRestartDiagnostics([]);
       setHealthPods([]);
       setNodes([]);
       setEvents([]);
@@ -441,6 +445,7 @@ export default function App() {
       setBottomTabs([]);
       setActiveBottomTabId('');
       setSelectedPodRefs([]);
+      setRestartDiagnosticModal({ open: false, loading: false, error: '', snapshot: null });
     }
   });
   const isAdmin = currentUser.roleMode === 'admin';
@@ -601,6 +606,26 @@ export default function App() {
     () => filteredPods.filter((pod) => selectedPodRefSet.has(podRefKey(pod.namespace, pod.name))),
     [filteredPods, selectedPodRefSet]
   );
+  const restartDiagnosticsByPod = useMemo(() => {
+    const exact = new Map();
+    restartDiagnostics.forEach((item) => {
+      const namespace = item.pod?.namespace || item.workload?.namespace || '';
+      const exactKey = podRefKey(namespace, item.pod?.name);
+      const current = exact.get(exactKey);
+      if (!current || new Date(current.incident_time).getTime() < new Date(item.incident_time).getTime()) {
+        exact.set(exactKey, item);
+      }
+    });
+    const result = new Map();
+    pods.forEach((pod) => {
+      const key = podRefKey(pod.namespace, pod.name);
+      const diagnostic = exact.get(key);
+      if (diagnostic && (!diagnostic.pod?.uid || !pod.uid || diagnostic.pod.uid === pod.uid)) {
+        result.set(key, diagnostic);
+      }
+    });
+    return result;
+  }, [pods, restartDiagnostics]);
 
   function filterRowsByQuery(rows, query, fields) {
     const q = String(query || '').trim().toLowerCase();
@@ -1023,14 +1048,9 @@ export default function App() {
     return Number(match[1]) < Number(match[2]);
   }
 
-  function findLatestEvent(namespace, kind, name) {
-    const target = `${kind}/${name}`.toLowerCase();
-    return events.find((event) => event.namespace === namespace && String(event.object || '').toLowerCase() === target) || null;
-  }
-
-  async function findLatestEventForTarget(namespace, kind, name) {
-    const existing = findLatestEvent(namespace, kind, name);
-    if (existing || !api || !namespace) {
+  async function loadNamespaceEvents(namespace) {
+    const existing = events.filter((event) => event.namespace === namespace);
+    if (!api || !namespace) {
       return existing;
     }
     try {
@@ -1040,11 +1060,18 @@ export default function App() {
         ...prev.filter((event) => event.namespace !== namespace),
         ...items
       ]);
-      const target = `${kind}/${name}`.toLowerCase();
-      return items.find((event) => String(event.object || '').toLowerCase() === target) || null;
+      return items;
     } catch {
-      return null;
+      return existing;
     }
+  }
+
+  async function findEventsForTarget(namespace, kind, name, uid = '') {
+    const target = `${kind}/${name}`.toLowerCase();
+    const namespaceEvents = await loadNamespaceEvents(namespace);
+    return namespaceEvents.filter((event) => event.namespace === namespace
+      && String(event.object || '').toLowerCase() === target
+      && (!uid || !event.object_uid || event.object_uid === uid));
   }
   const filteredServices = useMemo(
     () => filterRowsByQuery(services, serviceSearch, ['name', 'namespace', 'type', 'cluster_ip', 'ports', 'age']),
@@ -1405,10 +1432,15 @@ export default function App() {
       pods: async () => {
         if (selectedNamespaces.length === 0) {
           setPods([]);
+          setRestartDiagnostics([]);
           return;
         }
-        const podData = await api(`/api/pods?namespace=${encodeURIComponent(namespaceQuery)}`);
+        const [podData, diagnosticData] = await Promise.all([
+          api(`/api/pods?namespace=${encodeURIComponent(namespaceQuery)}`),
+          api(`/api/restart-diagnostics?namespace=${encodeURIComponent(namespaceQuery)}`).catch(() => ({ items: [] }))
+        ]);
         setPods(podData.items || []);
+        setRestartDiagnostics(diagnosticData.items || []);
       },
       workloads: async () => {
         if (selectedNamespaces.length === 0) {
@@ -1614,6 +1646,18 @@ export default function App() {
     if (selectedNamespaces.length === 0) return;
     const podData = await api(`/api/pods?namespace=${encodeURIComponent(namespaceQuery)}`);
     setPods(podData.items || []);
+  }
+
+  async function openRestartDiagnostic(summary) {
+    const namespace = summary?.pod?.namespace || summary?.workload?.namespace || '';
+    if (!summary?.secret_name || !namespace) return;
+    setRestartDiagnosticModal({ open: true, loading: true, error: '', snapshot: null });
+    try {
+      const snapshot = await api(`/api/restart-diagnostics/${encodeURIComponent(summary.secret_name)}?namespace=${encodeURIComponent(namespace)}`);
+      setRestartDiagnosticModal({ open: true, loading: false, error: '', snapshot });
+    } catch (err) {
+      setRestartDiagnosticModal({ open: true, loading: false, error: err.message || String(err), snapshot: null });
+    }
   }
 
   async function refreshInsights(category = activeInsightCategory) {
@@ -2736,56 +2780,19 @@ export default function App() {
     if (warningCache[cacheKey]) {
       return warningCache[cacheKey];
     }
-    const shouldPreferLogs = String(pod.phase) === 'Running' || Number(pod.restarts || 0) > 0;
-
-    let payload;
-    if (shouldPreferLogs) {
-      try {
-        const params = new URLSearchParams({ namespace: pod.namespace, pod: pod.name, tail: '40' });
-        const text = await api(`/api/podlogs?${params.toString()}`);
-        payload = {
-          kind: 'logs',
-          title: 'Recent logs',
-          text: text || 'No logs available'
-        };
-      } catch {
-        const relatedEvent = await findLatestEventForTarget(pod.namespace, 'pod', pod.name);
-        payload = relatedEvent ? {
-          kind: 'event',
-          title: relatedEvent.reason || 'Pod event',
-          text: relatedEvent.message || 'No details'
-        } : {
-          kind: 'event',
-          title: 'No diagnostic data',
-          text: 'No matching event or logs were found.'
-        };
-      }
-    } else {
-      const relatedEvent = await findLatestEventForTarget(pod.namespace, 'pod', pod.name);
-      if (relatedEvent) {
-        payload = {
-          kind: 'event',
-          title: relatedEvent.reason || 'Pod event',
-          text: relatedEvent.message || 'No details'
-        };
-      } else {
-        try {
-          const params = new URLSearchParams({ namespace: pod.namespace, pod: pod.name, tail: '40' });
-          const text = await api(`/api/podlogs?${params.toString()}`);
-          payload = {
-            kind: 'logs',
-            title: 'Recent logs',
-            text: text || 'No logs available'
-          };
-        } catch {
-          payload = {
-            kind: 'event',
-            title: 'No diagnostic data',
-            text: 'No matching event or logs were found.'
-          };
-        }
-      }
-    }
+    const relatedEvents = await findEventsForTarget(pod.namespace, 'pod', pod.name, pod.uid);
+    const payload = relatedEvents.length ? {
+      kind: 'event',
+      title: `Pod events (${relatedEvents.length})`,
+      text: relatedEvents.map((event) => {
+        const timestamp = event.last_seen ? `${event.last_seen} · ` : '';
+        return `${timestamp}${event.reason || event.type || 'Event'}\n${event.message || 'No details'}`;
+      }).join('\n\n')
+    } : {
+      kind: 'event',
+      title: 'Pod events',
+      text: 'No events found for this pod.'
+    };
 
     setWarningCache((prev) => ({ ...prev, [cacheKey]: payload }));
     return payload;
@@ -2796,31 +2803,41 @@ export default function App() {
     if (warningCache[cacheKey]) {
       return warningCache[cacheKey];
     }
-    const relatedEvent = await findLatestEventForTarget(workload.namespace, workload.kind, workload.name);
-    let payload;
-    if (relatedEvent) {
-      payload = {
-        kind: 'event',
-        title: relatedEvent.reason || 'Workload event',
-        text: relatedEvent.message || 'No details'
-      };
-    } else {
-      try {
-        const params = new URLSearchParams({ namespace: workload.namespace, kind: workload.kind, name: workload.name, tail: '40' });
-        const text = await api(`/api/workloadlogs?${params.toString()}`);
-        payload = {
-          kind: 'logs',
-          title: 'Recent workload logs',
-          text: text || 'No logs available'
-        };
-      } catch {
-        payload = {
-          kind: 'event',
-          title: 'No diagnostic data',
-          text: 'No matching workload event or logs were found.'
-        };
-      }
+    const namespaceEvents = await loadNamespaceEvents(workload.namespace);
+    const workloadTarget = `${workload.kind}/${workload.name}`.toLowerCase();
+    let candidatePods = pods.filter((pod) => pod.namespace === workload.namespace);
+    try {
+      const podData = await api(`/api/pods?namespace=${encodeURIComponent(workload.namespace)}`);
+      candidatePods = podData.items || candidatePods;
+    } catch {
+      // Workload events remain available even when the role cannot list pods.
     }
+    const relatedPods = new Map(
+      candidatePods
+        .filter((pod) => String(pod.workload_kind || '').toLowerCase() === String(workload.kind || '').toLowerCase()
+          && pod.workload_name === workload.name)
+        .map((pod) => [pod.name, pod.uid || ''])
+    );
+    const relatedEvents = namespaceEvents.filter((event) => {
+      const object = String(event.object || '').toLowerCase();
+      if (object === workloadTarget) return true;
+      if (!object.startsWith('pod/')) return false;
+      const podName = String(event.object || '').slice(4);
+      const podUID = relatedPods.get(podName);
+      return relatedPods.has(podName) && (!podUID || !event.object_uid || event.object_uid === podUID);
+    });
+    const payload = relatedEvents.length ? {
+      kind: 'event',
+      title: `Workload events (${relatedEvents.length})`,
+      text: relatedEvents.map((event) => {
+        const timestamp = event.last_seen ? `${event.last_seen} · ` : '';
+        return `${timestamp}${event.reason || event.type || 'Event'} · ${event.object || 'Workload'}\n${event.message || 'No details'}`;
+      }).join('\n\n')
+    } : {
+      kind: 'event',
+      title: 'Workload events',
+      text: 'No relevant events found for this workload.'
+    };
     setWarningCache((prev) => ({ ...prev, [cacheKey]: payload }));
     return payload;
   }
@@ -3105,6 +3122,8 @@ export default function App() {
               refreshAll={refreshAll}
               deleteSelectedPods={deleteSelectedPods}
               evictSelectedPods={evictSelectedPods}
+              restartDiagnosticsByPod={restartDiagnosticsByPod}
+              openRestartDiagnostic={openRestartDiagnostic}
             />
           )}
 
@@ -3691,6 +3710,14 @@ export default function App() {
           setPasswordPromptConfirm('');
         }}
         onSubmit={() => safe(applyPasswordReset)}
+      />
+
+      <RestartDiagnosticModal
+        open={restartDiagnosticModal.open}
+        loading={restartDiagnosticModal.loading}
+        error={restartDiagnosticModal.error}
+        snapshot={restartDiagnosticModal.snapshot}
+        onClose={() => setRestartDiagnosticModal({ open: false, loading: false, error: '', snapshot: null })}
       />
 
       {bottomNotice ? (

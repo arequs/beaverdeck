@@ -38,6 +38,8 @@ After an Insight points to a likely issue, BeaverDeck provides the operational t
 - review cluster health, warnings, and category-scoped operational insights without jumping between multiple Kubernetes tools
 - keep access controlled with users, roles, and namespace-scoped permissions
 
+When a container restarts or a pod is evicted, Restart Diagnostics stores one bounded incident snapshot per pod in a Kubernetes Secret named `beaverdeck-restart-<pod-name>` and owned by the affected workload. Older workload/container-scoped diagnostic Secrets are consolidated automatically. The Pods table exposes that snapshot next to the restart count, including recent container/node metrics, node usage and allocatable/capacity totals, requests and limits, pods on the node, pod/node and PVC/PV events, persistent-storage details, and timestamped previous logs for every container. Metrics Server is preferred; BeaverDeck falls back to the kubelet resource endpoint when available. Missing data is shown explicitly and does not prevent the rest of the snapshot from being saved.
+
 The CRDs navigation item expands into all definitions visible in the cluster. Namespaced custom resources are queried only in namespaces allowed by the signed-in user's BeaverDeck role. To support arbitrary installed CRDs, the chart ClusterRole grants the BeaverDeck ServiceAccount wildcard get/list/create/update/patch/delete access across API groups and resources; BeaverDeck's application RBAC restricts which users can use that access.
 
 Helm release status and history are read from Helm 3 release Secrets or ConfigMaps under Applications → Helm Releases. Argo CD status and deployment history are read from `applications.argoproj.io` resources under Applications → Argo CD Applications when that CRD is installed. The chart's existing Kubernetes RBAC covers both providers, while BeaverDeck queries only namespaces allowed by the signed-in user's role. Revision source configuration and created-resource details require Applications Manage permission; BeaverDeck does not trigger Argo CD sync, rollback, or deletion operations.
@@ -288,6 +290,13 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `readinessProbe.initialDelaySeconds` | `5` | Initial delay before the readiness probe starts. |
 | `readinessProbe.path` | `/healthz` | Readiness probe HTTP path. |
 | `readinessProbe.periodSeconds` | `10` | Readiness probe period. |
+| `restartDiagnostics.enabled` | `true` | Watch pod restart/eviction transitions and persist the latest incident snapshot per pod. |
+| `restartDiagnostics.intervalSeconds` | `10` | CPU and memory sampling interval. |
+| `restartDiagnostics.historyMinutes` | `5` | Minimum bounded in-memory metric history retained for pre-incident lookup. |
+| `restartDiagnostics.maxEvents` | `20` | Maximum relevant Kubernetes events stored per snapshot. |
+| `restartDiagnostics.maxLogBytesPerContainer` | `32768` | Maximum previous-log bytes stored for one container. |
+| `restartDiagnostics.maxLogLines` | `100` | Maximum previous-log lines requested per container. |
+| `restartDiagnostics.maxTotalLogBytes` | `131072` | Maximum previous-log bytes across all pod containers in one snapshot. |
 | `resources` | `{}` | Container resource requests and limits. |
 | `service.annotations` | `{}` | Extra Service annotations. |
 | `service.port` | `80` | Service port. |

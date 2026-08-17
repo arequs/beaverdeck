@@ -68,6 +68,36 @@ func (s *Server) pods(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) restartDiagnosticSummaries(w http.ResponseWriter, r *http.Request) {
+	writeNamespacedList(s, w, r, "pods", func(ctx context.Context, ns string) ([]kube.RestartDiagnosticSummary, error) {
+		return s.kube.ListRestartDiagnosticSummaries(ctx, ns)
+	}, func(a, b kube.RestartDiagnosticSummary) bool {
+		return a.IncidentTime.After(b.IncidentTime)
+	})
+}
+
+func (s *Server) restartDiagnosticSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePermission(w, r, "pods", "view") {
+		return
+	}
+	ns, ok := s.namespaceFromQuery(r)
+	if !ok {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+		return
+	}
+	name := strings.TrimSpace(r.PathValue("name"))
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("diagnostic name is required"))
+		return
+	}
+	snapshot, err := s.kube.GetRestartDiagnosticSnapshot(r.Context(), ns, name)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
 func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 	writeClusterList(s, w, r, "nodes", func(ctx context.Context) ([]kube.NodeInfo, error) {
 		return s.kube.ListNodes(ctx)

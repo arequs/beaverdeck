@@ -13,6 +13,15 @@ clusterName: "Cluster name not set"
 managedNamespace: ""
 allowAllNamespaces: true
 
+restartDiagnostics:
+  enabled: true
+  intervalSeconds: 10
+  historyMinutes: 5
+  maxLogLines: 100
+  maxLogBytesPerContainer: 32768
+  maxTotalLogBytes: 131072
+  maxEvents: 20
+
 suppressedInsights:
   configMapName: ""
   key: suppressed_insights.json

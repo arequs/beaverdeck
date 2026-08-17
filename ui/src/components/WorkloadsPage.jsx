@@ -1,4 +1,5 @@
 import React from 'react';
+import { BellRing } from 'lucide-react';
 import ActionMenu from './ActionMenu.jsx';
 
 export default function WorkloadsPage({
@@ -53,14 +54,14 @@ export default function WorkloadsPage({
                   {isDegradedReady(w.ready) ? (
                     <button
                       className="warning-indicator"
-                      title="Workload is not fully ready"
+                      title="View workload events"
                       onMouseEnter={(e) => {
                         void showWarningPopover(e, { type: 'workload', key: `workload:${w.namespace}:${w.kind}:${w.name}`, item: w });
                       }}
                       onMouseLeave={() => scheduleWarningPopoverHide(`workload:${w.namespace}:${w.kind}:${w.name}`)}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      !
+                      <BellRing size={13} strokeWidth={2} aria-hidden="true" />
                     </button>
                   ) : null}
                 </div>

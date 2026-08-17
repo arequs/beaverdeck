@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -67,41 +68,52 @@ type ServiceAccountInfo struct {
 }
 
 type PodInfo struct {
-	Namespace           string   `json:"namespace"`
-	Name                string   `json:"name"`
-	Phase               string   `json:"phase"`
-	Ready               string   `json:"ready"`
-	Restarts            int32    `json:"restarts"`
-	Age                 string   `json:"age"`
-	Node                string   `json:"node"`
-	Containers          []string `json:"containers"`
-	MetricsAvailable    bool     `json:"metrics_available"`
-	CPU                 string   `json:"cpu"`
-	CPUUsedMilli        int64    `json:"cpu_used_milli"`
-	CPURequestMilli     int64    `json:"cpu_request_milli"`
-	CPULimitMilli       int64    `json:"cpu_limit_milli"`
-	CPUTotalMilli       int64    `json:"cpu_total_milli"`
-	Memory              string   `json:"memory"`
-	MemoryUsedBytes     int64    `json:"memory_used_bytes"`
-	MemoryRequestBytes  int64    `json:"memory_request_bytes"`
-	MemoryLimitBytes    int64    `json:"memory_limit_bytes"`
-	MemoryTotalBytes    int64    `json:"memory_total_bytes"`
-	GPU                 string   `json:"gpu"`
-	GPUMetricsAvailable bool     `json:"gpu_metrics_available"`
-	GPUUsedPercent      int64    `json:"gpu_used_percent"`
-	GPUMemoryUsedBytes  int64    `json:"gpu_memory_used_bytes"`
-	GPURequestCount     int64    `json:"gpu_request_count"`
-	GPUDeviceCount      int64    `json:"gpu_device_count"`
+	Namespace           string                 `json:"namespace"`
+	Name                string                 `json:"name"`
+	UID                 types.UID              `json:"uid"`
+	Phase               string                 `json:"phase"`
+	Ready               string                 `json:"ready"`
+	Restarts            int32                  `json:"restarts"`
+	Age                 string                 `json:"age"`
+	Node                string                 `json:"node"`
+	Containers          []string               `json:"containers"`
+	ContainerRestarts   []ContainerRestartInfo `json:"container_restarts"`
+	WorkloadKind        string                 `json:"workload_kind,omitempty"`
+	WorkloadName        string                 `json:"workload_name,omitempty"`
+	MetricsAvailable    bool                   `json:"metrics_available"`
+	CPU                 string                 `json:"cpu"`
+	CPUUsedMilli        int64                  `json:"cpu_used_milli"`
+	CPURequestMilli     int64                  `json:"cpu_request_milli"`
+	CPULimitMilli       int64                  `json:"cpu_limit_milli"`
+	CPUTotalMilli       int64                  `json:"cpu_total_milli"`
+	Memory              string                 `json:"memory"`
+	MemoryUsedBytes     int64                  `json:"memory_used_bytes"`
+	MemoryRequestBytes  int64                  `json:"memory_request_bytes"`
+	MemoryLimitBytes    int64                  `json:"memory_limit_bytes"`
+	MemoryTotalBytes    int64                  `json:"memory_total_bytes"`
+	GPU                 string                 `json:"gpu"`
+	GPUMetricsAvailable bool                   `json:"gpu_metrics_available"`
+	GPUUsedPercent      int64                  `json:"gpu_used_percent"`
+	GPUMemoryUsedBytes  int64                  `json:"gpu_memory_used_bytes"`
+	GPURequestCount     int64                  `json:"gpu_request_count"`
+	GPUDeviceCount      int64                  `json:"gpu_device_count"`
+}
+
+type ContainerRestartInfo struct {
+	Name     string `json:"name"`
+	Restarts int32  `json:"restarts"`
+	Init     bool   `json:"init"`
 }
 
 type EventInfo struct {
-	Namespace string `json:"namespace"`
-	Type      string `json:"type"`
-	Reason    string `json:"reason"`
-	Object    string `json:"object"`
-	Message   string `json:"message"`
-	Count     int32  `json:"count"`
-	LastSeen  string `json:"last_seen"`
+	Namespace string    `json:"namespace"`
+	ObjectUID types.UID `json:"object_uid,omitempty"`
+	Type      string    `json:"type"`
+	Reason    string    `json:"reason"`
+	Object    string    `json:"object"`
+	Message   string    `json:"message"`
+	Count     int32     `json:"count"`
+	LastSeen  string    `json:"last_seen"`
 }
 
 type NodeInfo struct {
@@ -376,19 +388,22 @@ type resourceCounterSample struct {
 }
 
 type resourceMetricsCache struct {
-	mu      sync.Mutex
-	podCPU  map[string]resourceCounterSample
-	nodeCPU map[string]resourceCounterSample
+	mu           sync.Mutex
+	podCPU       map[string]resourceCounterSample
+	containerCPU map[string]resourceCounterSample
+	nodeCPU      map[string]resourceCounterSample
 }
 
 type resourceMetricsScrape struct {
-	resourceScrapeError bool
-	podCPUSeconds       map[string]float64
-	podMemoryBytes      map[string]int64
-	nodeCPUSeconds      float64
-	nodeMemoryBytes     int64
-	hasNodeCPU          bool
-	hasNodeMemory       bool
+	resourceScrapeError  bool
+	podCPUSeconds        map[string]float64
+	podMemoryBytes       map[string]int64
+	containerCPUSeconds  map[string]float64
+	containerMemoryBytes map[string]int64
+	nodeCPUSeconds       float64
+	nodeMemoryBytes      int64
+	hasNodeCPU           bool
+	hasNodeMemory        bool
 }
 
 type resourceMetricsStatus struct {
@@ -425,8 +440,9 @@ func InCluster() (*Client, error) {
 		mapper:    mapper,
 		discovery: cached,
 		metrics: resourceMetricsCache{
-			podCPU:  make(map[string]resourceCounterSample),
-			nodeCPU: make(map[string]resourceCounterSample),
+			podCPU:       make(map[string]resourceCounterSample),
+			containerCPU: make(map[string]resourceCounterSample),
+			nodeCPU:      make(map[string]resourceCounterSample),
 		},
 	}, nil
 }

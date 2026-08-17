@@ -60,6 +60,21 @@
       "type": "boolean",
       "description": "If true, BeaverDeck can operate across all namespaces allowed by Kubernetes RBAC."
     },
+    "restartDiagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Kubernetes-native restart incident snapshots and bounded in-memory metric history.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "intervalSeconds": { "type": "integer", "minimum": 1 },
+        "historyMinutes": { "type": "integer", "minimum": 5 },
+        "maxLogLines": { "type": "integer", "minimum": 1 },
+        "maxLogBytesPerContainer": { "type": "integer", "minimum": 1024 },
+        "maxTotalLogBytes": { "type": "integer", "minimum": 1024 },
+        "maxEvents": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["enabled", "intervalSeconds", "historyMinutes", "maxLogLines", "maxLogBytesPerContainer", "maxTotalLogBytes", "maxEvents"]
+    },
     "suppressedInsights": {
       "type": "object",
       "additionalProperties": false,
@@ -371,6 +386,7 @@
     "clusterName",
     "managedNamespace",
     "allowAllNamespaces",
+    "restartDiagnostics",
     "suppressedInsights",
     "podAnnotations",
     "podLabels",

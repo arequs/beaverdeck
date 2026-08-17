@@ -67,6 +67,20 @@ spec:
               {{- end }}
             - name: ALLOW_ALL_NAMESPACES
               value: {{ ternary "true" "false" .Values.allowAllNamespaces | quote }}
+            - name: RESTART_DIAGNOSTICS_ENABLED
+              value: {{ ternary "true" "false" .Values.restartDiagnostics.enabled | quote }}
+            - name: RESTART_DIAGNOSTICS_INTERVAL_SECONDS
+              value: {{ .Values.restartDiagnostics.intervalSeconds | quote }}
+            - name: RESTART_DIAGNOSTICS_HISTORY_MINUTES
+              value: {{ .Values.restartDiagnostics.historyMinutes | quote }}
+            - name: RESTART_DIAGNOSTICS_MAX_LOG_LINES
+              value: {{ .Values.restartDiagnostics.maxLogLines | quote }}
+            - name: RESTART_DIAGNOSTICS_MAX_LOG_BYTES_PER_CONTAINER
+              value: {{ .Values.restartDiagnostics.maxLogBytesPerContainer | quote }}
+            - name: RESTART_DIAGNOSTICS_MAX_TOTAL_LOG_BYTES
+              value: {{ .Values.restartDiagnostics.maxTotalLogBytes | quote }}
+            - name: RESTART_DIAGNOSTICS_MAX_EVENTS
+              value: {{ .Values.restartDiagnostics.maxEvents | quote }}
             - name: SUPPRESSED_INSIGHTS_CONFIGMAP_NAME
               value: {{ include "beaverdeck.suppressedInsightsConfigMapName" . | quote }}
             - name: SUPPRESSED_INSIGHTS_CONFIGMAP_KEY

@@ -26,6 +26,13 @@ type Config struct {
 	UpdateCheckURL                  string
 	UpdateCheckEvery                time.Duration
 	UpdateCheckJitter               time.Duration
+	RestartDiagnosticsEnabled       bool
+	RestartDiagnosticsInterval      time.Duration
+	RestartDiagnosticsHistory       time.Duration
+	RestartDiagnosticsMaxLogLines   int64
+	RestartDiagnosticsMaxLogBytes   int64
+	RestartDiagnosticsMaxTotalBytes int64
+	RestartDiagnosticsMaxEvents     int
 }
 
 func FromEnv() Config {
@@ -50,6 +57,18 @@ func FromEnv() Config {
 	allowAll, _ := strconv.ParseBool(env("ALLOW_ALL_NAMESPACES", "false"))
 	cfg.AllowAllNamespaces = allowAll
 
+	restartDiagnosticsEnabled, err := strconv.ParseBool(env("RESTART_DIAGNOSTICS_ENABLED", "true"))
+	if err != nil {
+		restartDiagnosticsEnabled = true
+	}
+	cfg.RestartDiagnosticsEnabled = restartDiagnosticsEnabled
+	cfg.RestartDiagnosticsInterval = durationFromPositiveEnv("RESTART_DIAGNOSTICS_INTERVAL_SECONDS", 10, time.Second)
+	cfg.RestartDiagnosticsHistory = durationFromPositiveEnv("RESTART_DIAGNOSTICS_HISTORY_MINUTES", 5, time.Minute)
+	cfg.RestartDiagnosticsMaxLogLines = int64FromPositiveEnv("RESTART_DIAGNOSTICS_MAX_LOG_LINES", 100)
+	cfg.RestartDiagnosticsMaxLogBytes = int64FromPositiveEnv("RESTART_DIAGNOSTICS_MAX_LOG_BYTES_PER_CONTAINER", 32768)
+	cfg.RestartDiagnosticsMaxTotalBytes = int64FromPositiveEnv("RESTART_DIAGNOSTICS_MAX_TOTAL_LOG_BYTES", 131072)
+	cfg.RestartDiagnosticsMaxEvents = int(int64FromPositiveEnv("RESTART_DIAGNOSTICS_MAX_EVENTS", 20))
+
 	intervalHours, err := strconv.Atoi(env("UPDATE_CHECK_INTERVAL_HOURS", "24"))
 	if err != nil || intervalHours <= 0 {
 		intervalHours = 24
@@ -62,6 +81,19 @@ func FromEnv() Config {
 	}
 	cfg.UpdateCheckJitter = time.Duration(jitterMinutes) * time.Minute
 	return cfg
+}
+
+func durationFromPositiveEnv(key string, fallback int64, unit time.Duration) time.Duration {
+	value := int64FromPositiveEnv(key, fallback)
+	return time.Duration(value) * unit
+}
+
+func int64FromPositiveEnv(key string, fallback int64) int64 {
+	value, err := strconv.ParseInt(env(key, strconv.FormatInt(fallback, 10)), 10, 64)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func normalizeBasePath(path string) string {

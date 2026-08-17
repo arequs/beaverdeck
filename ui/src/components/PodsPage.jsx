@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Logs, SquareTerminal } from 'lucide-react';
+import { BellRing, Info, Logs, SquareTerminal } from 'lucide-react';
 import ActionMenu from './ActionMenu.jsx';
 import DelayedTooltip from './DelayedTooltip.jsx';
 
@@ -44,7 +44,9 @@ export default function PodsPage({
   setSelectedPod,
   refreshAll,
   deleteSelectedPods,
-  evictSelectedPods
+  evictSelectedPods,
+  restartDiagnosticsByPod,
+  openRestartDiagnostic
 }) {
   const selectAllRef = useRef(null);
   const visiblePodRefs = useMemo(
@@ -147,6 +149,7 @@ export default function PodsPage({
             {sortedPods.map((p) => {
               const rowKey = podRefKey(p.namespace, p.name);
               const rowSelected = selectedPodRefSet.has(rowKey);
+              const restartDiagnostic = restartDiagnosticsByPod.get(rowKey);
               const showPodWarning = isDegradedReady(p.ready) && String(p.phase || '').toLowerCase() !== 'succeeded';
               const logsPermission = permissionInfo('pods', 'view', p.namespace);
               const execPermission = allAllowed(
@@ -191,19 +194,38 @@ export default function PodsPage({
                         <button
                           type="button"
                           className="warning-indicator"
-                          title="Pod is not fully ready"
+                          title="View pod events"
                           onMouseEnter={(e) => {
                             void showWarningPopover(e, { type: 'pod', key: `pod:${p.namespace}:${p.name}`, item: p });
                           }}
                           onMouseLeave={() => scheduleWarningPopoverHide(`pod:${p.namespace}:${p.name}`)}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          !
+                          <BellRing size={13} strokeWidth={2} aria-hidden="true" />
                         </button>
                       ) : null}
                     </div>
                   </td>
-                  <td>{p.restarts}</td>
+                  <td>
+                    <div className="ready-cell restart-cell">
+                      <span className="restart-count-value">{p.restarts}</span>
+                      {restartDiagnostic ? (
+                        <DelayedTooltip key={restartDiagnostic.secret_name} content="Incident snapshot for pod">
+                          <button
+                            type="button"
+                            className="pod-icon-button restart-diagnostic-button"
+                            aria-label="Open restart diagnostics for pod"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openRestartDiagnostic(restartDiagnostic);
+                            }}
+                          >
+                            <Info className="pod-action-icon" size={14} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        </DelayedTooltip>
+                      ) : null}
+                    </div>
+                  </td>
                   <td>{p.node || '-'}</td>
                   <td>{p.age}</td>
                   <td className="actions-cell">

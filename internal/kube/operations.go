@@ -614,6 +614,7 @@ func (c *Client) ListEvents(ctx context.Context, ns string, limit int) ([]EventI
 		}
 		out = append(out, EventInfo{
 			Namespace: ns,
+			ObjectUID: e.InvolvedObject.UID,
 			Type:      e.Type,
 			Reason:    e.Reason,
 			Object:    obj,

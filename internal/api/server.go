@@ -71,6 +71,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/namespaces", s.namespaces)
 	mux.HandleFunc("GET /api/workloads", s.workloads)
 	mux.HandleFunc("GET /api/pods", s.pods)
+	mux.HandleFunc("GET /api/restart-diagnostics", s.restartDiagnosticSummaries)
+	mux.HandleFunc("GET /api/restart-diagnostics/{name}", s.restartDiagnosticSnapshot)
 	mux.HandleFunc("GET /api/nodes", s.nodes)
 	mux.HandleFunc("GET /api/ingresses", s.ingresses)
 	mux.HandleFunc("GET /api/secrets", s.secrets)

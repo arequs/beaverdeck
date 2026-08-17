@@ -273,8 +273,10 @@ func (c *Client) scrapeNodeResourceMetrics(ctx context.Context, restClient rest.
 
 func parseResourceMetrics(raw []byte) (resourceMetricsScrape, error) {
 	result := resourceMetricsScrape{
-		podCPUSeconds:  make(map[string]float64),
-		podMemoryBytes: make(map[string]int64),
+		podCPUSeconds:        make(map[string]float64),
+		podMemoryBytes:       make(map[string]int64),
+		containerCPUSeconds:  make(map[string]float64),
+		containerMemoryBytes: make(map[string]int64),
 	}
 	lines := strings.Split(string(raw), "\n")
 	for _, line := range lines {
@@ -296,6 +298,20 @@ func parseResourceMetrics(raw []byte) (resourceMetricsScrape, error) {
 			pod := strings.TrimSpace(labels["pod"])
 			if ns != "" && pod != "" {
 				result.podMemoryBytes[ns+"/"+pod] = int64(value)
+			}
+		case "container_cpu_usage_seconds_total":
+			ns := strings.TrimSpace(labels["namespace"])
+			pod := strings.TrimSpace(labels["pod"])
+			container := strings.TrimSpace(labels["container"])
+			if ns != "" && pod != "" && container != "" {
+				result.containerCPUSeconds[ns+"/"+pod+"/"+container] = value
+			}
+		case "container_memory_working_set_bytes":
+			ns := strings.TrimSpace(labels["namespace"])
+			pod := strings.TrimSpace(labels["pod"])
+			container := strings.TrimSpace(labels["container"])
+			if ns != "" && pod != "" && container != "" {
+				result.containerMemoryBytes[ns+"/"+pod+"/"+container] = int64(value)
 			}
 		case "node_cpu_usage_seconds_total":
 			result.nodeCPUSeconds = value
@@ -405,9 +421,16 @@ func (c *Client) updateNodeCPUCounter(key string, current float64, now time.Time
 	return c.updateCPUCounter(c.metrics.nodeCPU, key, current, now)
 }
 
+func (c *Client) updateContainerCPUCounter(key string, current float64, now time.Time) (int64, bool) {
+	return c.updateCPUCounter(c.metrics.containerCPU, key, current, now)
+}
+
 func (c *Client) updateCPUCounter(cache map[string]resourceCounterSample, key string, current float64, now time.Time) (int64, bool) {
 	c.metrics.mu.Lock()
 	defer c.metrics.mu.Unlock()
+	if cache == nil {
+		return 0, false
+	}
 
 	prev, ok := cache[key]
 	cache[key] = resourceCounterSample{value: current, sampledAt: now}

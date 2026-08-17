@@ -1000,6 +1000,18 @@ tbody tr:hover {
   gap: 6px;
 }
 
+.restart-cell {
+  display: inline-grid;
+  grid-template-columns: 3ch 27px;
+  align-items: center;
+  column-gap: 6px;
+}
+
+.restart-count-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .actions-cell {
   min-width: 0;
   white-space: nowrap;
@@ -1765,6 +1777,175 @@ body[data-theme="light"] .modal-backdrop {
 .google-auth-modal,
 .role-modal {
   width: min(940px, 96vw);
+}
+
+.restart-diagnostic-modal {
+  width: min(1120px, 96vw);
+  max-width: 96vw;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.restart-diagnostic-modal > .modal-header {
+  flex: 0 0 auto;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.restart-diagnostic-body {
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+.restart-diagnostic-modal h3,
+.restart-diagnostic-modal h4 {
+  margin: 0;
+}
+
+.restart-diagnostic-modal h4 {
+  margin-bottom: 7px;
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.diagnostic-content {
+  display: grid;
+  gap: 14px;
+}
+
+.diagnostic-summary-grid,
+.diagnostic-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.diagnostic-resource-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.diagnostic-summary-grid > div,
+.diagnostic-resource-grid > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.diagnostic-summary-grid span,
+.diagnostic-resource-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.diagnostic-summary-grid strong,
+.diagnostic-resource-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-message,
+.diagnostic-warnings,
+.diagnostic-state {
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.diagnostic-state-error,
+.diagnostic-warnings {
+  color: var(--danger);
+}
+
+.diagnostic-table-wrap {
+  max-height: 240px;
+}
+
+.diagnostic-node-pods {
+  max-height: 280px;
+}
+
+.diagnostic-affected-row td {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+
+.diagnostic-events {
+  display: grid;
+  gap: 6px;
+}
+
+.diagnostic-event {
+  display: grid;
+  grid-template-columns: 180px 130px minmax(120px, 180px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 7px 8px;
+  border-left: 2px solid var(--line-strong);
+  background: var(--surface);
+}
+
+.diagnostic-event time,
+.diagnostic-event span {
+  color: var(--muted);
+}
+
+.diagnostic-event p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-logs {
+  display: grid;
+  gap: 6px;
+}
+
+.diagnostic-logs details {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.diagnostic-logs summary {
+  cursor: pointer;
+  padding: 8px;
+  font-weight: 650;
+}
+
+.diagnostic-logs pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 9px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  white-space: pre;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.restart-diagnostic-button {
+  color: var(--accent-strong);
+}
+
+@media (max-width: 760px) {
+  .diagnostic-summary-grid,
+  .diagnostic-resource-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .diagnostic-event {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
 }
 
 .scale-modal {

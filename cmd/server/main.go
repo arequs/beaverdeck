@@ -108,6 +108,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	kc.StartRestartDiagnostics(ctx, kube.RestartDiagnosticsOptions{
+		Enabled:                 cfg.RestartDiagnosticsEnabled,
+		Namespace:               diagnosticNamespace(cfg),
+		Interval:                cfg.RestartDiagnosticsInterval,
+		History:                 cfg.RestartDiagnosticsHistory,
+		MaxLogLines:             cfg.RestartDiagnosticsMaxLogLines,
+		MaxLogBytesPerContainer: cfg.RestartDiagnosticsMaxLogBytes,
+		MaxTotalLogBytes:        cfg.RestartDiagnosticsMaxTotalBytes,
+		MaxEvents:               cfg.RestartDiagnosticsMaxEvents,
+	})
 	updatecheck.Start(ctx, cfg, userStore)
 
 	go func() {
@@ -121,6 +131,13 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+}
+
+func diagnosticNamespace(cfg config.Config) string {
+	if cfg.AllowAllNamespaces {
+		return ""
+	}
+	return cfg.ManagedNamespace
 }
 
 func initializeUserConfig(ctx context.Context, kc *kube.Client, userStore *users.Store, ref kube.ConfigSecretRef) (users.BootstrapStatus, error) {
