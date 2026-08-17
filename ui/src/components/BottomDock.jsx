@@ -18,6 +18,7 @@ export default function BottomDock({
   refreshLogTab,
   changeLogContainer,
   refreshManifestTab,
+  refreshYamlTab,
   revealSecretManifestTab,
   handleLogsScroll,
   logsOutputRef,
@@ -131,6 +132,15 @@ export default function BottomDock({
                 ) : null}
                 {!activeBottomTab?.error ? <YamlViewer text={activeBottomTab?.content || ''} /> : null}
               </div>
+            </div>
+          )}
+
+          {!activeBottomTab?.loading && activeBottomTab?.type === 'yaml' && (
+            <div className="edit-pane">
+              <div className="toolbar fixed-toolbar">
+                <button onClick={() => safe(() => refreshYamlTab(activeBottomTab.id))}>Refresh</button>
+              </div>
+              {!activeBottomTab?.error ? <YamlViewer text={activeBottomTab?.content || ''} /> : null}
             </div>
           )}
 

@@ -107,6 +107,120 @@ func (s *Server) configMaps(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) helmReleases(w http.ResponseWriter, r *http.Request) {
+	writeNamespacedList(s, w, r, "applications", func(ctx context.Context, ns string) ([]kube.HelmReleaseInfo, error) {
+		return s.kube.ListHelmReleases(ctx, ns)
+	}, func(a, b kube.HelmReleaseInfo) bool {
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		return a.Name < b.Name
+	})
+}
+
+func (s *Server) helmReleaseHistory(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePermission(w, r, "applications", "view") {
+		return
+	}
+	namespace, allowed := s.namespaceFromQuery(r)
+	if !allowed {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+		return
+	}
+	name := strings.TrimSpace(r.PathValue("name"))
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("release name is required"))
+		return
+	}
+	items, err := s.kube.ListHelmReleaseHistory(r.Context(), namespace, name)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) helmReleaseRevisionDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePermission(w, r, "applications", "edit") {
+		return
+	}
+	namespace, allowed := s.namespaceFromQuery(r)
+	if !allowed {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+		return
+	}
+	name := strings.TrimSpace(r.PathValue("name"))
+	revision, err := strconv.Atoi(strings.TrimSpace(r.PathValue("revision")))
+	if name == "" || err != nil || revision < 1 {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("valid release name and revision are required"))
+		return
+	}
+	detail := strings.TrimSpace(r.PathValue("detail"))
+	content, err := s.kube.GetHelmReleaseRevisionYAML(r.Context(), namespace, name, revision, detail)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"yaml": content})
+}
+
+func (s *Server) argoCDApplications(w http.ResponseWriter, r *http.Request) {
+	writeNamespacedList(s, w, r, "applications", func(ctx context.Context, ns string) ([]kube.ArgoCDApplicationInfo, error) {
+		return s.kube.ListArgoCDApplications(ctx, ns)
+	}, func(a, b kube.ArgoCDApplicationInfo) bool {
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		return a.Name < b.Name
+	})
+}
+
+func (s *Server) argoCDApplicationHistory(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePermission(w, r, "applications", "view") {
+		return
+	}
+	namespace, allowed := s.namespaceFromQuery(r)
+	if !allowed {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+		return
+	}
+	name := strings.TrimSpace(r.PathValue("name"))
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("application name is required"))
+		return
+	}
+	items, err := s.kube.ListArgoCDApplicationHistory(r.Context(), namespace, name)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) argoCDApplicationRevisionDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePermission(w, r, "applications", "edit") {
+		return
+	}
+	namespace, allowed := s.namespaceFromQuery(r)
+	if !allowed {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
+		return
+	}
+	name := strings.TrimSpace(r.PathValue("name"))
+	revision, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("revision")), 10, 64)
+	if name == "" || err != nil || revision < 0 {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("valid application name and history ID are required"))
+		return
+	}
+	detail := strings.TrimSpace(r.PathValue("detail"))
+	content, err := s.kube.GetArgoCDApplicationRevisionYAML(r.Context(), namespace, name, revision, detail)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"yaml": content})
+}
+
 func (s *Server) crds(w http.ResponseWriter, r *http.Request) {
 	writeClusterList(s, w, r, "crds", func(ctx context.Context) ([]kube.CRDInfo, error) {
 		return s.kube.ListCRDs(ctx)

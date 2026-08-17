@@ -16,6 +16,13 @@ export const MENU = [
     ]
   },
   {
+    section: 'Applications',
+    items: [
+      { id: 'helmreleases', label: 'Helm Releases' },
+      { id: 'argocdapplications', label: 'Argo CD Applications' }
+    ]
+  },
+  {
     section: 'RBAC',
     items: [
       { id: 'clusterroles', label: 'Cluster Roles' },
@@ -95,13 +102,15 @@ export const SORT_DEFAULTS = {
   configmaps: { key: 'name', dir: 'asc' },
   crds: { key: 'name', dir: 'asc' },
   customresources: { key: 'name', dir: 'asc' },
+  helmreleases: { key: 'name', dir: 'asc' },
+  argocdapplications: { key: 'name', dir: 'asc' },
   secrets: { key: 'name', dir: 'asc' },
   pvcs: { key: 'name', dir: 'asc' },
   pvs: { key: 'name', dir: 'asc' },
   storageclasses: { key: 'name', dir: 'asc' }
 };
 
-export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply'];
+export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'applications', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply'];
 export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'pvs', 'storageclasses']);
 export const BOTTOM_DOCK_HIDDEN_NAVS = new Set([...INSIGHT_NAV_IDS, 'cluster-health', 'user-management', 'apply']);
 export const DOCK_TOP_RATIO_DEFAULT = 0.62;
@@ -121,6 +130,8 @@ export const NAV_RESOURCE = {
   ingresses: 'ingresses',
   configmaps: 'configmaps',
   crds: 'crds',
+  helmreleases: 'applications',
+  argocdapplications: 'applications',
   secrets: 'secrets',
   pvcs: 'pvcs',
   pvs: 'pvs',
@@ -187,6 +198,11 @@ export const ROLE_RESOURCE_OPTIONS = {
     { value: 'view', label: 'View CRDs', hint: 'Can view CustomResourceDefinitions and custom resources in allowed namespaces.' },
     { value: 'edit', label: 'Manage CRDs', hint: 'Can edit CustomResourceDefinitions and custom resources in allowed namespaces.' },
     { value: 'full', label: 'Full CRD access', hint: 'Can view, edit and delete CustomResourceDefinitions and custom resources in allowed namespaces.' }
+  ],
+  applications: [
+    { value: 'none', label: 'None', hint: 'Cannot view applications managed by Helm, Argo CD, or other supported delivery systems.' },
+    { value: 'view', label: 'View', hint: 'Can view application status and history in allowed namespaces.' },
+    { value: 'edit', label: 'Manage', hint: 'Can inspect application configuration and created resources in allowed namespaces.' }
   ],
   secrets: [
     { value: 'none', label: 'No access', hint: 'Cannot view Secrets.' },

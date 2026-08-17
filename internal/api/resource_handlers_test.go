@@ -145,3 +145,171 @@ func TestCustomResourceListRejectsForbiddenNamespaceBeforeClusterLookup(t *testi
 		t.Fatalf("returned unexpected denial: %s", response.Body.String())
 	}
 }
+
+func TestHelmHistoryRejectsForbiddenNamespaceBeforeClusterLookup(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRole(ctx, "helm-reader", "viewer", []byte(`{"namespaces":["apps"],"resources":{"applications":{"view":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, "operator", "operator-pass", users.Role("helm-reader")); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "operator", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{ManagedNamespace: "apps", AllowAllNamespaces: true}, nil, store, embed.FS{})
+	handler := auth.Middleware(store)(server.Routes())
+	request := httptest.NewRequest(http.MethodGet, "/api/helm/releases/demo/history?namespace=restricted", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-BeaverDeck-Username", "operator")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "namespace is not allowed") {
+		t.Fatalf("returned unexpected denial: %s", response.Body.String())
+	}
+}
+
+func TestHelmRevisionDetailsRequireManagePermission(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRole(ctx, "helm-reader", "viewer", []byte(`{"namespaces":["apps"],"resources":{"applications":{"view":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, "operator", "operator-pass", users.Role("helm-reader")); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "operator", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{ManagedNamespace: "apps", AllowAllNamespaces: true}, nil, store, embed.FS{})
+	handler := auth.Middleware(store)(server.Routes())
+	request := httptest.NewRequest(http.MethodGet, "/api/helm/releases/demo/revisions/2/values?namespace=apps", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-BeaverDeck-Username", "operator")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "permission denied: edit applications") {
+		t.Fatalf("returned unexpected denial: %s", response.Body.String())
+	}
+}
+
+func TestArgoCDHistoryRejectsForbiddenNamespaceBeforeClusterLookup(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRole(ctx, "applications-reader", "viewer", []byte(`{"namespaces":["apps"],"resources":{"applications":{"view":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, "operator", "operator-pass", users.Role("applications-reader")); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "operator", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{ManagedNamespace: "apps", AllowAllNamespaces: true}, nil, store, embed.FS{})
+	handler := auth.Middleware(store)(server.Routes())
+	request := httptest.NewRequest(http.MethodGet, "/api/argocd/applications/demo/history?namespace=restricted", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-BeaverDeck-Username", "operator")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "namespace is not allowed") {
+		t.Fatalf("returned unexpected denial: %s", response.Body.String())
+	}
+}
+
+func TestArgoCDRevisionDetailsRequireManagePermission(t *testing.T) {
+	ctx := context.Background()
+	store, err := users.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if err := store.ResetToEmptyConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRole(ctx, "applications-reader", "viewer", []byte(`{"namespaces":["apps"],"resources":{"applications":{"view":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, "operator", "operator-pass", users.Role("applications-reader")); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "operator", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(config.Config{ManagedNamespace: "apps", AllowAllNamespaces: true}, nil, store, embed.FS{})
+	handler := auth.Middleware(store)(server.Routes())
+	request := httptest.NewRequest(http.MethodGet, "/api/argocd/applications/demo/revisions/1/source?namespace=apps", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-BeaverDeck-Username", "operator")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("returned status %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "permission denied: edit applications") {
+		t.Fatalf("returned unexpected denial: %s", response.Body.String())
+	}
+}

@@ -142,7 +142,15 @@ export function SidebarNav({
   toggleCRDNav,
   toggleCRDGroup,
   handleCRDGroupSelect,
-  handleCRDSelect
+  handleCRDSelect,
+  selectedHelmRelease,
+  helmNavExpanded,
+  toggleHelmNav,
+  handleHelmReleaseSelect,
+  selectedArgoCDApplication,
+  argoCDNavExpanded,
+  toggleArgoCDNav,
+  handleArgoCDApplicationSelect
 }) {
   const allNamespacesRef = useRef(null);
   const allNamespacesSelected = namespaces.length > 0 && selectedNamespaces.length === namespaces.length;
@@ -252,7 +260,7 @@ export function SidebarNav({
                                 {crdGroup.children.map((child) => (
                                   <button
                                     key={child.id}
-                                    className={`nav-item nav-tree-child nav-tree-leaf ${selectedCRDName === child.id ? 'active' : ''}`}
+                                    className={`nav-item nav-tree-child nav-tree-leaf nav-leaf-aligned ${selectedCRDName === child.id ? 'active' : ''}`}
                                     onClick={() => handleCRDSelect(child.id)}
                                     title={`${child.label} (${child.id})`}
                                   >
@@ -262,6 +270,74 @@ export function SidebarNav({
                               </div>
                             ) : null}
                           </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : item.id === 'helmreleases' ? (
+                  <div key={item.id} className="nav-item-tree">
+                    <div className="nav-item-row">
+                      <button
+                        type="button"
+                        className="nav-item-toggle"
+                        onClick={toggleHelmNav}
+                        aria-label={helmNavExpanded ? 'Collapse Helm Releases' : 'Expand Helm Releases'}
+                        aria-expanded={helmNavExpanded}
+                      >
+                        {helmNavExpanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
+                      </button>
+                      <button
+                        className={`nav-item nav-item-main ${activeNav === item.id && !selectedHelmRelease ? 'active' : ''}`}
+                        onClick={() => handleNavChange(item.id)}
+                      >
+                        {item.label}
+                      </button>
+                    </div>
+                    {helmNavExpanded && item.children?.length > 0 ? (
+                      <div className="nav-tree-children">
+                        {item.children.map((child) => (
+                          <button
+                            key={child.id}
+                            className={`nav-item nav-tree-child nav-tree-leaf nav-leaf-aligned ${activeNav === 'helmreleases' && selectedHelmRelease?.namespace === child.release.namespace && selectedHelmRelease?.name === child.release.name ? 'active' : ''}`}
+                            onClick={() => handleHelmReleaseSelect(child.release)}
+                            title={child.title}
+                          >
+                            {child.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : item.id === 'argocdapplications' ? (
+                  <div key={item.id} className="nav-item-tree">
+                    <div className="nav-item-row">
+                      <button
+                        type="button"
+                        className="nav-item-toggle"
+                        onClick={toggleArgoCDNav}
+                        aria-label={argoCDNavExpanded ? 'Collapse Argo CD Applications' : 'Expand Argo CD Applications'}
+                        aria-expanded={argoCDNavExpanded}
+                      >
+                        {argoCDNavExpanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
+                      </button>
+                      <button
+                        className={`nav-item nav-item-main ${activeNav === item.id && !selectedArgoCDApplication ? 'active' : ''}`}
+                        onClick={() => handleNavChange(item.id)}
+                      >
+                        {item.label}
+                      </button>
+                    </div>
+                    {argoCDNavExpanded && item.children?.length > 0 ? (
+                      <div className="nav-tree-children">
+                        {item.children.map((child) => (
+                          <button
+                            key={child.id}
+                            className={`nav-item nav-tree-child nav-tree-leaf nav-leaf-aligned ${activeNav === 'argocdapplications' && selectedArgoCDApplication?.namespace === child.application.namespace && selectedArgoCDApplication?.name === child.application.name ? 'active' : ''}`}
+                            onClick={() => handleArgoCDApplicationSelect(child.application)}
+                            title={child.title}
+                          >
+                            {child.label}
+                          </button>
                         ))}
                       </div>
                     ) : null}

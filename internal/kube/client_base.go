@@ -180,6 +180,42 @@ type CustomResourceInfo struct {
 	Age        string `json:"age"`
 }
 
+type HelmReleaseInfo struct {
+	Namespace    string `json:"namespace"`
+	Name         string `json:"name"`
+	Revision     int    `json:"revision"`
+	Status       string `json:"status"`
+	Chart        string `json:"chart"`
+	ChartVersion string `json:"chart_version"`
+	AppVersion   string `json:"app_version"`
+	Updated      string `json:"updated"`
+	Description  string `json:"description"`
+}
+
+type ArgoCDApplicationInfo struct {
+	Namespace    string `json:"namespace"`
+	Name         string `json:"name"`
+	Project      string `json:"project"`
+	SyncStatus   string `json:"sync_status"`
+	HealthStatus string `json:"health_status"`
+	Revision     string `json:"revision"`
+	Source       string `json:"source"`
+	Destination  string `json:"destination"`
+	Updated      string `json:"updated"`
+}
+
+type ArgoCDApplicationRevisionInfo struct {
+	Namespace     string `json:"namespace"`
+	Name          string `json:"name"`
+	ID            int64  `json:"id"`
+	Revision      string `json:"revision"`
+	Source        string `json:"source"`
+	DeployStarted string `json:"deploy_started"`
+	Deployed      string `json:"deployed"`
+	InitiatedBy   string `json:"initiated_by"`
+	Current       bool   `json:"current"`
+}
+
 type ServiceInfo struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`

@@ -15,9 +15,11 @@ import {
   ScaleModal
 } from './components/AppModals.jsx';
 import ApplyYamlPage from './components/ApplyYamlPage.jsx';
+import ArgoCDApplicationsPage from './components/ArgoCDApplicationsPage.jsx';
 import BottomDock from './components/BottomDock.jsx';
 import { BootstrapSetupScreen, LoginScreen, SidebarNav, WorkspaceHeader } from './components/AppChrome.jsx';
 import ClusterHealthPage from './components/ClusterHealthPage.jsx';
+import HelmReleasesPage from './components/HelmReleasesPage.jsx';
 import InsightsPage from './components/InsightsPage.jsx';
 import NodesPage from './components/NodesPage.jsx';
 import PodsPage from './components/PodsPage.jsx';
@@ -200,6 +202,14 @@ export default function App() {
   const [customResourceDefinition, setCustomResourceDefinition] = useState(null);
   const [crdNavExpanded, setCRDNavExpanded] = useState(false);
   const [expandedCRDGroups, setExpandedCRDGroups] = useState(() => new Set());
+  const [helmReleases, setHelmReleases] = useState([]);
+  const [selectedHelmRelease, setSelectedHelmRelease] = useState(null);
+  const [helmReleaseHistory, setHelmReleaseHistory] = useState([]);
+  const [helmNavExpanded, setHelmNavExpanded] = useState(false);
+  const [argoCDApplications, setArgoCDApplications] = useState([]);
+  const [selectedArgoCDApplication, setSelectedArgoCDApplication] = useState(null);
+  const [argoCDApplicationHistory, setArgoCDApplicationHistory] = useState([]);
+  const [argoCDNavExpanded, setArgoCDNavExpanded] = useState(false);
   const [secrets, setSecrets] = useState([]);
   const [pvcs, setPVCs] = useState([]);
   const [pvs, setPVs] = useState([]);
@@ -266,6 +276,8 @@ export default function App() {
   const [configMapSearch, setConfigMapSearch] = useState('');
   const [crdSearch, setCRDSearch] = useState('');
   const [customResourceSearch, setCustomResourceSearch] = useState('');
+  const [helmReleaseSearch, setHelmReleaseSearch] = useState('');
+  const [argoCDApplicationSearch, setArgoCDApplicationSearch] = useState('');
   const [secretSearch, setSecretSearch] = useState('');
   const [pvcSearch, setPVCSearch] = useState('');
   const [pvSearch, setPVSearch] = useState('');
@@ -382,6 +394,14 @@ export default function App() {
       setCustomResources([]);
       setCustomResourceDefinition(null);
       setExpandedCRDGroups(new Set());
+      setHelmReleases([]);
+      setSelectedHelmRelease(null);
+      setHelmReleaseHistory([]);
+      setHelmNavExpanded(false);
+      setArgoCDApplications([]);
+      setSelectedArgoCDApplication(null);
+      setArgoCDApplicationHistory([]);
+      setArgoCDNavExpanded(false);
       setSecrets([]);
       setPVCs([]);
       setPVs([]);
@@ -466,10 +486,34 @@ export default function App() {
                 ...item,
                 children: groupCRDsForNavigation(crds)
               }
-            : item)
+            : item.id === 'helmreleases'
+              ? {
+                  ...item,
+                  children: [...helmReleases]
+                    .sort((left, right) => left.name.localeCompare(right.name) || left.namespace.localeCompare(right.namespace))
+                    .map((release) => ({
+                      id: `${release.namespace}/${release.name}`,
+                      label: release.name,
+                      title: `${release.name} · ${release.chart || 'chart'} · ${release.namespace}`,
+                      release
+                    }))
+                }
+              : item.id === 'argocdapplications'
+                ? {
+                    ...item,
+                    children: [...argoCDApplications]
+                      .sort((left, right) => left.name.localeCompare(right.name) || left.namespace.localeCompare(right.namespace))
+                      .map((application) => ({
+                        id: `${application.namespace}/${application.name}`,
+                        label: application.name,
+                        title: [application.name, application.project, application.namespace].filter(Boolean).join(' · '),
+                        application
+                      }))
+                  }
+              : item)
       }))
       .filter((group) => group.items.length > 0),
-    [isAdmin, userPermissions, crds]
+    [isAdmin, userPermissions, crds, helmReleases, argoCDApplications]
   );
   const visibleNavItems = useMemo(() => visibleMenu.flatMap((group) => group.items), [visibleMenu]);
   const expandNavSectionForNav = useCallback((navId) => {
@@ -1044,6 +1088,26 @@ export default function App() {
     () => getSorted('customresources', filteredCustomResources),
     [filteredCustomResources, sortByNav]
   );
+  const filteredHelmReleases = useMemo(
+    () => filterRowsByQuery(helmReleases, helmReleaseSearch, ['name', 'namespace', 'status', 'chart', 'chart_version', 'app_version', 'updated']),
+    [helmReleases, helmReleaseSearch]
+  );
+  const sortedHelmReleases = useMemo(
+    () => getSorted('helmreleases', filteredHelmReleases),
+    [filteredHelmReleases, sortByNav]
+  );
+  const filteredArgoCDApplications = useMemo(
+    () => filterRowsByQuery(
+      argoCDApplications,
+      argoCDApplicationSearch,
+      ['name', 'namespace', 'project', 'sync_status', 'health_status', 'revision', 'source', 'destination', 'updated']
+    ),
+    [argoCDApplications, argoCDApplicationSearch]
+  );
+  const sortedArgoCDApplications = useMemo(
+    () => getSorted('argocdapplications', filteredArgoCDApplications),
+    [filteredArgoCDApplications, sortByNav]
+  );
   const filteredSecrets = useMemo(
     () => filterRowsByQuery(secrets, secretSearch, ['name', 'namespace', 'type', 'data_keys', 'age']),
     [secrets, secretSearch]
@@ -1117,11 +1181,23 @@ export default function App() {
 
   function handleNavChange(nextNav) {
     if (!nextNav) return;
+    if (nextNav !== 'helmreleases') {
+      closeHelmReleaseHistory();
+    }
+    if (nextNav !== 'argocdapplications') {
+      closeArgoCDApplicationHistory();
+    }
     if (nextNav === 'crds') {
       setSelectedCRDName('');
       setSelectedCRDGroup('');
       setCustomResources([]);
       setCustomResourceDefinition(null);
+    }
+    if (nextNav === 'helmreleases') {
+      closeHelmReleaseHistory();
+    }
+    if (nextNav === 'argocdapplications') {
+      closeArgoCDApplicationHistory();
     }
     if (nextNav === activeNav) return;
     setWarningPopover(null);
@@ -1175,6 +1251,125 @@ export default function App() {
         setCRDs(data.items || []);
       });
     }
+  }
+
+  async function openHelmReleaseHistory(release) {
+    const data = await api(`/api/helm/releases/${encodeURIComponent(release.name)}/history?namespace=${encodeURIComponent(release.namespace)}`);
+    setSelectedHelmRelease(release);
+    setHelmReleaseHistory(data.items || []);
+  }
+
+  function handleHelmReleaseSelect(release) {
+    closeArgoCDApplicationHistory();
+    setHelmNavExpanded(true);
+    activateNav('helmreleases');
+    safe(() => openHelmReleaseHistory(release));
+  }
+
+  function toggleHelmNav() {
+    const expanding = !helmNavExpanded;
+    setHelmNavExpanded(expanding);
+    if (expanding && helmReleases.length === 0 && selectedNamespaces.length > 0) {
+      safe(async () => {
+        const data = await api(`/api/helm/releases?namespace=${encodeURIComponent(namespaceQuery)}`);
+        setHelmReleases(data.items || []);
+      });
+    }
+  }
+
+  function closeHelmReleaseHistory() {
+    setSelectedHelmRelease(null);
+    setHelmReleaseHistory([]);
+  }
+
+  async function openArgoCDApplicationHistory(application) {
+    const data = await api(`/api/argocd/applications/${encodeURIComponent(application.name)}/history?namespace=${encodeURIComponent(application.namespace)}`);
+    setSelectedArgoCDApplication(application);
+    setArgoCDApplicationHistory(data.items || []);
+  }
+
+  function handleArgoCDApplicationSelect(application) {
+    closeHelmReleaseHistory();
+    setArgoCDNavExpanded(true);
+    activateNav('argocdapplications');
+    safe(() => openArgoCDApplicationHistory(application));
+  }
+
+  function toggleArgoCDNav() {
+    const expanding = !argoCDNavExpanded;
+    setArgoCDNavExpanded(expanding);
+    if (expanding && argoCDApplications.length === 0 && selectedNamespaces.length > 0) {
+      safe(async () => {
+        const data = await api(`/api/argocd/applications?namespace=${encodeURIComponent(namespaceQuery)}`);
+        setArgoCDApplications(data.items || []);
+      });
+    }
+  }
+
+  function closeArgoCDApplicationHistory() {
+    setSelectedArgoCDApplication(null);
+    setArgoCDApplicationHistory([]);
+  }
+
+  async function refreshApplicationDetailTab(tabId, tabOverride = null) {
+    const tab = tabOverride || bottomTabsRef.current.find((item) => item.id === tabId);
+    if (!tab || tab.type !== 'yaml' || !tab.endpoint) return;
+    upsertTab({ id: tabId, loading: true, error: '' }, false);
+    try {
+      const data = await api(tab.endpoint);
+      upsertTab({ id: tabId, content: data.yaml || '', loading: false, error: '' }, false);
+    } catch (err) {
+      upsertTab({ id: tabId, loading: false, error: err.message || String(err) }, false);
+    }
+  }
+
+  async function openHelmRevisionDetail(revision, detail) {
+    const labels = {
+      values: 'Values',
+      'user-values': 'User values',
+      resources: 'Created resources'
+    };
+    const endpoint = `/api/helm/releases/${encodeURIComponent(revision.name)}/revisions/${revision.revision}/${detail}?namespace=${encodeURIComponent(revision.namespace)}`;
+    const id = `helm:${revision.namespace}:${revision.name}:${revision.revision}:${detail}`;
+    if (bottomTabsRef.current.some((tab) => tab.id === id)) {
+      setActiveBottomTabId(id);
+      return;
+    }
+    const tab = {
+      id,
+      type: 'yaml',
+      title: `${labels[detail] || detail} ${revision.name}@${revision.revision}`,
+      content: '',
+      endpoint,
+      loading: true,
+      error: ''
+    };
+    upsertTab(tab);
+    await refreshApplicationDetailTab(id, tab);
+  }
+
+  async function openArgoCDRevisionDetail(revision, detail) {
+    const labels = {
+      source: 'Source',
+      resources: 'Created resources'
+    };
+    const endpoint = `/api/argocd/applications/${encodeURIComponent(revision.name)}/revisions/${revision.id}/${detail}?namespace=${encodeURIComponent(revision.namespace)}`;
+    const id = `argocd:${revision.namespace}:${revision.name}:${revision.id}:${detail}`;
+    if (bottomTabsRef.current.some((tab) => tab.id === id)) {
+      setActiveBottomTabId(id);
+      return;
+    }
+    const tab = {
+      id,
+      type: 'yaml',
+      title: `${labels[detail] || detail} ${revision.name}@${revision.id}`,
+      content: '',
+      endpoint,
+      loading: true,
+      error: ''
+    };
+    upsertTab(tab);
+    await refreshApplicationDetailTab(id, tab);
   }
 
   async function refreshSelectedCRDResources(crdItems = crds, crdName = selectedCRDName) {
@@ -1293,6 +1488,36 @@ export default function App() {
         const items = crdData.items || [];
         setCRDs(items);
         await refreshSelectedCRDResources(items);
+      },
+      helmreleases: async () => {
+        if (selectedNamespaces.length === 0) {
+          setHelmReleases([]);
+          closeHelmReleaseHistory();
+          return;
+        }
+        const data = await api(`/api/helm/releases?namespace=${encodeURIComponent(namespaceQuery)}`);
+        const items = data.items || [];
+        setHelmReleases(items);
+        if (selectedHelmRelease) {
+          const current = items.find((item) => item.namespace === selectedHelmRelease.namespace && item.name === selectedHelmRelease.name);
+          if (current) await openHelmReleaseHistory(current);
+          else closeHelmReleaseHistory();
+        }
+      },
+      argocdapplications: async () => {
+        if (selectedNamespaces.length === 0) {
+          setArgoCDApplications([]);
+          closeArgoCDApplicationHistory();
+          return;
+        }
+        const data = await api(`/api/argocd/applications?namespace=${encodeURIComponent(namespaceQuery)}`);
+        const items = data.items || [];
+        setArgoCDApplications(items);
+        if (selectedArgoCDApplication) {
+          const current = items.find((item) => item.namespace === selectedArgoCDApplication.namespace && item.name === selectedArgoCDApplication.name);
+          if (current) await openArgoCDApplicationHistory(current);
+          else closeArgoCDApplicationHistory();
+        }
       },
       secrets: async () => {
         if (selectedNamespaces.length === 0) {
@@ -2810,6 +3035,14 @@ export default function App() {
         toggleCRDGroup={toggleCRDGroup}
         handleCRDGroupSelect={handleCRDGroupSelect}
         handleCRDSelect={handleCRDSelect}
+        selectedHelmRelease={selectedHelmRelease}
+        helmNavExpanded={helmNavExpanded}
+        toggleHelmNav={toggleHelmNav}
+        handleHelmReleaseSelect={handleHelmReleaseSelect}
+        selectedArgoCDApplication={selectedArgoCDApplication}
+        argoCDNavExpanded={argoCDNavExpanded}
+        toggleArgoCDNav={toggleArgoCDNav}
+        handleArgoCDApplicationSelect={handleArgoCDApplicationSelect}
       />
 
       <section className="workspace">
@@ -3085,6 +3318,42 @@ export default function App() {
             />
           )}
 
+          {activeNav === 'helmreleases' && (
+            <HelmReleasesPage
+              releaseSearch={helmReleaseSearch}
+              setReleaseSearch={setHelmReleaseSearch}
+              sortedReleases={sortedHelmReleases}
+              selectedRelease={selectedHelmRelease}
+              releaseHistory={helmReleaseHistory}
+              toggleSort={toggleSort}
+              sortMark={sortMark}
+              makeAction={makeAction}
+              permissionInfo={permissionInfo}
+              safe={safe}
+              openHistory={openHelmReleaseHistory}
+              closeHistory={closeHelmReleaseHistory}
+              openRevisionDetail={openHelmRevisionDetail}
+            />
+          )}
+
+          {activeNav === 'argocdapplications' && (
+            <ArgoCDApplicationsPage
+              applicationSearch={argoCDApplicationSearch}
+              setApplicationSearch={setArgoCDApplicationSearch}
+              sortedApplications={sortedArgoCDApplications}
+              selectedApplication={selectedArgoCDApplication}
+              applicationHistory={argoCDApplicationHistory}
+              toggleSort={toggleSort}
+              sortMark={sortMark}
+              makeAction={makeAction}
+              permissionInfo={permissionInfo}
+              safe={safe}
+              openHistory={openArgoCDApplicationHistory}
+              closeHistory={closeArgoCDApplicationHistory}
+              openRevisionDetail={openArgoCDRevisionDetail}
+            />
+          )}
+
           {activeNav === 'secrets' && (
             <SecretsPage
               secretSearch={secretSearch}
@@ -3241,6 +3510,7 @@ export default function App() {
           refreshLogTab={refreshLogTab}
           changeLogContainer={changeLogContainer}
           refreshManifestTab={refreshManifestTab}
+          refreshYamlTab={refreshApplicationDetailTab}
           revealSecretManifestTab={revealSecretManifestTab}
           handleLogsScroll={handleLogsScroll}
           logsOutputRef={logsOutputRef}

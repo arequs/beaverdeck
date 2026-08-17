@@ -30,7 +30,7 @@ This keeps BeaverDeck responsive on larger clusters and makes the troubleshootin
 
 After an Insight points to a likely issue, BeaverDeck provides the operational tools needed to confirm and act:
 
-- browse cluster objects such as pods, workloads, nodes, services, ingresses, config maps, secrets, PVCs, PVs, storage classes, CRDs and their custom resources, and events
+- browse cluster objects such as pods, workloads, nodes, services, ingresses, config maps, secrets, PVCs, PVs, storage classes, CRDs and their custom resources, Helm releases, Argo CD applications, and events
 - inspect manifests as YAML and apply edits through the UI
 - stream pod and workload logs, including older log history when troubleshooting
 - open `exec` sessions into running pods
@@ -39,6 +39,8 @@ After an Insight points to a likely issue, BeaverDeck provides the operational t
 - keep access controlled with users, roles, and namespace-scoped permissions
 
 The CRDs navigation item expands into all definitions visible in the cluster. Namespaced custom resources are queried only in namespaces allowed by the signed-in user's BeaverDeck role. To support arbitrary installed CRDs, the chart ClusterRole grants the BeaverDeck ServiceAccount wildcard get/list/create/update/patch/delete access across API groups and resources; BeaverDeck's application RBAC restricts which users can use that access.
+
+Helm release status and history are read from Helm 3 release Secrets or ConfigMaps under Applications → Helm Releases. Argo CD status and deployment history are read from `applications.argoproj.io` resources under Applications → Argo CD Applications when that CRD is installed. The chart's existing Kubernetes RBAC covers both providers, while BeaverDeck queries only namespaces allowed by the signed-in user's role. Revision source configuration and created-resource details require Applications Manage permission; BeaverDeck does not trigger Argo CD sync, rollback, or deletion operations.
 
 ![BeaverDeck Overview](https://raw.githubusercontent.com/arequs/beaverdeck/main/docs/images/overview.png)
 

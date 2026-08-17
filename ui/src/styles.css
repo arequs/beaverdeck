@@ -661,6 +661,11 @@ button.menu-group-title:focus-visible {
   padding-left: 18px;
 }
 
+.nav-leaf-aligned {
+  width: calc(100% - 3px);
+  margin-left: 3px;
+}
+
 .workspace {
   min-width: 0;
   min-height: 0;
@@ -726,6 +731,47 @@ button.menu-group-title:focus-visible {
 
 .status-idle {
   color: var(--muted);
+}
+
+.helm-status,
+.application-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.helm-status[data-status="deployed"],
+.application-status[data-status="synced"],
+.application-status[data-status="healthy"],
+.application-status[data-status="current"] {
+  border-color: color-mix(in srgb, var(--ok) 55%, var(--line));
+  color: var(--ok);
+}
+
+.helm-status[data-status="failed"],
+.application-status[data-status="degraded"],
+.application-status[data-status="missing"] {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  color: var(--danger);
+}
+
+.helm-status[data-status^="pending"],
+.application-status[data-status="outofsync"],
+.application-status[data-status="progressing"] {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
+  color: var(--warn);
+}
+
+.mono-cell {
+  font-family: var(--font-mono);
 }
 
 .workspace-main {

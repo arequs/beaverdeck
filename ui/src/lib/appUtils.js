@@ -57,6 +57,8 @@ export function terminalThemeFor(mode) {
 export function defaultRolePermissions() {
   const resources = {};
   ROLE_RESOURCES.forEach((resource) => {
+    // New resources must default to no access so roles created by older versions
+    // remain least-privileged when the UI normalizes them for editing.
     resources[resource] = { view: false, edit: false, delete: false };
   });
   return { namespaces: [], resources };
