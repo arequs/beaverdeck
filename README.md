@@ -3,7 +3,7 @@
 # BeaverDeck
 
 BeaverDeck is a lightweight Kubernetes operations, optimization and triage tool for inspecting cluster state, troubleshooting workloads, and performing common day-2 actions from a single web UI.
-Its Cluster Insights workflow helps operations teams find risks before they turn into incidents: it starts with categorized signals for nodes, workloads, networking, and storage, then lets operators drill into manifests, logs, exec sessions, and remediation actions from the same UI.
+Its default Dashboard summarizes visible cluster health, capacity, events, and Insights, while the categorized Insights workflow lets operators drill into manifests, logs, exec sessions, and remediation actions from the same UI.
 
 ## Quick Start
 
@@ -26,6 +26,12 @@ kubectl -n beaverdeck port-forward svc/beaverdeck 8080:80
 Then open `http://localhost:8080`. On first start, BeaverDeck asks for the initial admin username and password.
 
 See chart details on [Artifact Hub](https://artifacthub.io/packages/search?repo=beaverdeck).
+
+## Dashboard
+
+Every signed-in user lands on Dashboard. It combines a role-scoped health score with node and pod readiness, CPU and memory capacity bars, workload and PVC readiness, pod status distribution, top pod consumers, recent warning events, object inventory, and an Insights summary.
+
+Dashboard does not introduce a separate permission. It is always present in the top-level navigation, but each panel and API request is enabled only when the signed-in role has View access to the underlying resource and selected namespace. Panels update independently as their data arrives. Insights categories are included only when the role can also view the source resources needed to calculate them and are evaluated together in one shared cluster scan; users without matching permissions see no data from those resources.
 
 ## Insights-First Triage
 
@@ -56,7 +62,8 @@ After an Insight points to a likely issue, BeaverDeck provides the operational t
 - view pod and workload logs
 - open `exec` sessions into running pods
 - run common operational actions such as scale, restart, delete, evict, drain, and uncordon
-- review cluster health and category-scoped operational insights for nodes, workloads, GPU, networking, storage, security, and configuration
+- start from an RBAC-scoped Dashboard with health, capacity, readiness, warning-event, inventory, and Insights summaries
+- review category-scoped operational insights for nodes, workloads, GPU, networking, storage, security, and configuration
 - keep access controlled with users, roles, and namespace-scoped permissions
 
 The CRDs navigation item expands into the definitions available in the cluster. Custom resources are listed only from namespaces allowed by the signed-in user's BeaverDeck role; cluster-scoped custom resources remain cluster-scoped. The chart ServiceAccount has wildcard get/list/create/update/patch/delete access across API groups and resources because Kubernetes RBAC cannot predeclare resource names for arbitrary installed CRDs, while BeaverDeck's own RBAC remains the user-facing authorization boundary.
@@ -91,7 +98,7 @@ On startup, BeaverDeck reads its auth configuration from a Kubernetes Secret. By
 
 If the Secret is missing, BeaverDeck starts the initialization screen and waits for the initial admin username and password in the UI. The Secret is created only after successful initialization. If the Secret exists, BeaverDeck imports it and logs the selected path. If startup import fails, the log includes the failed stage and BeaverDeck exits without overwriting the existing Secret. Fix the Secret content, or delete the Secret to start initialization again.
 
-Admins can export and import the same YAML snapshot from the Admin UI. The snapshot includes local users, roles, Google OAuth config and mappings, and OIDC/Azure Entra ID config and mappings. Local user passwords are exported only as BeaverDeck password hashes, not raw passwords or base64-encoded passwords.
+Admins can export and import the same YAML snapshot from the Admin UI. The snapshot includes local users, roles, Google OAuth, generic OIDC, and Azure Entra ID configuration and mappings. Generic OIDC and Entra use independent sections and can be enabled at the same time. Local user passwords are exported only as BeaverDeck password hashes, not raw passwords or base64-encoded passwords.
 
 Example Secret:
 
@@ -139,11 +146,22 @@ stringData:
         email_claim: email
         groups_claim: groups
       mappings: []
+    entra:
+      config:
+        provider_name: Azure Entra ID
+        issuer_url: ""
+        client_id: ""
+        client_secret: ""
+        scopes: openid email profile User.Read GroupMember.Read.All
+        hosted_domain: ""
+        email_claim: email
+        groups_claim: groups
+      mappings: []
 ```
 
 Any role with `mode: "admin"` has full access; its `permissions` value is ignored. Non-admin roles are controlled by their `permissions`. If `permissions` is omitted, the role has no permissions. Resource permission values are compact levels: `view`, `edit`, or `full`.
 For Secrets, `view` lists metadata only. Opening a Secret manifest, revealing decoded values, and editing require `secrets: edit`; deleting requires `secrets: full`. User and role administration always requires `mode: admin` and is not delegated through resource permissions.
-Valid partial configuration Secrets are completed during startup import. For example, a Secret that contains only a local admin-mode user and one OIDC provider is normalized with the current schema version, default admin role, empty Google config, default OIDC fields, and empty mappings before it is persisted back to the Secret after successful import.
+Valid partial configuration Secrets are completed during startup import. For example, a Secret that contains only a local admin-mode user and one OIDC provider is normalized with the current schema version, default admin role, empty Google config, default OIDC and Entra fields, and empty mappings before it is persisted back to the Secret after successful import. Legacy Entra settings stored in the old shared `oidc` section are migrated automatically to `entra`.
 
 ### Suppressed Insights ConfigMap
 
@@ -166,7 +184,7 @@ Generate a local user password hash with the BeaverDeck binary or image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.0 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.1 hash-password
 unset BDPASS
 ```
 
@@ -197,6 +215,7 @@ Mapped groups resolve to BeaverDeck roles during sign-in.
 ### OpenID Connect
 
 Generic OpenID Connect uses provider discovery and maps roles from the configured groups claim.
+It is configured independently from Azure Entra ID, so both sign-in methods can be active at the same time. Register `<BeaverDeck base URL>/api/auth/oidc/callback` as the provider callback URL.
 Configure:
 
 - Provider Name
@@ -213,6 +232,7 @@ Group mappings should match the exact group values returned by the provider in t
 ### Azure Entra ID
 
 Use an issuer URL in the form `https://login.microsoftonline.com/<tenant-id>/v2.0`.
+Entra has its own configuration and group mappings, independent from generic OIDC. Keep `<BeaverDeck base URL>/api/auth/oidc/callback` registered as the Entra web redirect URI; BeaverDeck preserves this historical callback and selects the correct provider through an isolated OAuth state cookie.
 For Microsoft Graph group lookup, include `User.Read` and `GroupMember.Read.All` in the configured scopes and grant the required Graph consent in Entra ID.
 Group mappings can use the group object ID, display name, mail address, or security identifier returned by Microsoft Graph.
 

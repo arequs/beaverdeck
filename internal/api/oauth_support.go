@@ -19,6 +19,7 @@ import (
 const (
 	googleAuthStateCookie = "beaverdeck_google_oauth_state"
 	oidcAuthStateCookie   = "beaverdeck_oidc_oauth_state"
+	entraAuthStateCookie  = "beaverdeck_entra_oauth_state"
 )
 
 type localLoginRequest struct {
@@ -118,6 +119,12 @@ func validateOAuthCallback(r *http.Request, cookieName string) (string, error) {
 		return "", fmt.Errorf("oauth provider did not return an auth code")
 	}
 	return code, nil
+}
+
+func oauthStateCookieMatches(r *http.Request, cookieName string) bool {
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	stateCookie, err := r.Cookie(cookieName)
+	return err == nil && state != "" && strings.TrimSpace(stateCookie.Value) != "" && subtleCompare(state, strings.TrimSpace(stateCookie.Value))
 }
 
 func exchangeGoogleCode(ctx context.Context, cfg users.GoogleConfig, redirectURI, code string) (string, error) {
@@ -426,14 +433,6 @@ func appendUniqueStrings(base []string, extra []string) []string {
 	return out
 }
 
-func isMicrosoftEntraConfig(cfg users.OIDCConfig) bool {
-	value := strings.ToLower(strings.TrimSpace(cfg.ProviderName) + " " + strings.TrimSpace(cfg.IssuerURL))
-	return strings.Contains(value, "entra") ||
-		strings.Contains(value, "azure") ||
-		strings.Contains(value, "microsoftonline.com") ||
-		strings.Contains(value, "sts.windows.net")
-}
-
 func fetchGoogleGroups(ctx context.Context, cfg users.GoogleConfig, email string) ([]string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
@@ -572,6 +571,12 @@ func googleRedirectURI(r *http.Request) string {
 
 func oidcRedirectURI(r *http.Request) string {
 	return requestBaseURL(r) + "/api/auth/oidc/callback"
+}
+
+func entraRedirectURI(r *http.Request) string {
+	// Keep the historical OIDC callback URI so existing Entra app registrations
+	// continue to work. The callback selects the provider by its isolated state cookie.
+	return oidcRedirectURI(r)
 }
 
 func requestBaseURL(r *http.Request) string {

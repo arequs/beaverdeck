@@ -27,6 +27,11 @@ func (s *Server) authProviders(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	entraCfg, err := s.users.GetEntraConfig(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"initialized": bootstrapStatus.Initialized,
@@ -47,6 +52,14 @@ func (s *Server) authProviders(w http.ResponseWriter, r *http.Request) {
 				strings.TrimSpace(oidcCfg.ClientSecret) != "",
 			"provider_name": providerLabel(oidcCfg.ProviderName, "OpenID Connect"),
 			"hosted_domain": oidcCfg.HostedDomain,
+		},
+		"entra": map[string]any{
+			"enabled": bootstrapStatus.Initialized &&
+				strings.TrimSpace(entraCfg.IssuerURL) != "" &&
+				strings.TrimSpace(entraCfg.ClientID) != "" &&
+				strings.TrimSpace(entraCfg.ClientSecret) != "",
+			"provider_name": providerLabel(entraCfg.ProviderName, "Azure Entra ID"),
+			"hosted_domain": entraCfg.HostedDomain,
 		},
 	})
 }
@@ -216,13 +229,30 @@ func (s *Server) authGoogleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authOIDCStart(w http.ResponseWriter, r *http.Request) {
+	s.authExternalOIDCStart(w, r, false)
+}
+
+func (s *Server) authEntraStart(w http.ResponseWriter, r *http.Request) {
+	s.authExternalOIDCStart(w, r, true)
+}
+
+func (s *Server) authExternalOIDCStart(w http.ResponseWriter, r *http.Request, entra bool) {
 	cfg, err := s.users.GetOIDCConfig(r.Context())
+	providerName := "OpenID Connect"
+	stateCookie := oidcAuthStateCookie
+	redirectURI := oidcRedirectURI(r)
+	if entra {
+		cfg, err = s.users.GetEntraConfig(r.Context())
+		providerName = "Azure Entra ID"
+		stateCookie = entraAuthStateCookie
+		redirectURI = entraRedirectURI(r)
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if strings.TrimSpace(cfg.IssuerURL) == "" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("OpenID Connect is not configured"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("%s is not configured", providerName))
 		return
 	}
 
@@ -236,11 +266,11 @@ func (s *Server) authOIDCStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	setOAuthStateCookie(w, oidcAuthStateCookie, state, requestIsSecure(r), 600)
+	setOAuthStateCookie(w, stateCookie, state, requestIsSecure(r), 600)
 
 	params := url.Values{}
 	params.Set("client_id", cfg.ClientID)
-	params.Set("redirect_uri", oidcRedirectURI(r))
+	params.Set("redirect_uri", redirectURI)
 	params.Set("response_type", "code")
 	params.Set("scope", oidcScopes(cfg.Scopes))
 	params.Set("state", state)
@@ -248,15 +278,36 @@ func (s *Server) authOIDCStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	defer clearOAuthStateCookie(w, oidcAuthStateCookie, requestIsSecure(r))
+	if oauthStateCookieMatches(r, entraAuthStateCookie) {
+		s.authExternalOIDCCallback(w, r, true)
+		return
+	}
+	s.authExternalOIDCCallback(w, r, false)
+}
+
+func (s *Server) authExternalOIDCCallback(w http.ResponseWriter, r *http.Request, entra bool) {
+	stateCookie := oidcAuthStateCookie
+	redirectURI := oidcRedirectURI(r)
+	providerName := "OpenID Connect"
+	authSource := "oidc"
+	if entra {
+		stateCookie = entraAuthStateCookie
+		redirectURI = entraRedirectURI(r)
+		providerName = "Azure Entra ID"
+		authSource = "entra"
+	}
+	defer clearOAuthStateCookie(w, stateCookie, requestIsSecure(r))
 
 	cfg, err := s.users.GetOIDCConfig(r.Context())
+	if entra {
+		cfg, err = s.users.GetEntraConfig(r.Context())
+	}
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
 
-	code, err := validateOAuthCallback(r, oidcAuthStateCookie)
+	code, err := validateOAuthCallback(r, stateCookie)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
@@ -270,7 +321,7 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
-	tokenResp, _, err := executeOAuthCodeExchange(ctx, discovery.TokenEndpoint, cfg.ClientID, cfg.ClientSecret, oidcRedirectURI(r), code)
+	tokenResp, _, err := executeOAuthCodeExchange(ctx, discovery.TokenEndpoint, cfg.ClientID, cfg.ClientSecret, redirectURI, code)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
@@ -296,17 +347,17 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(subject) == "" {
-		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect account is missing subject identity"))
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("%s account is missing subject identity", providerName))
 		return
 	}
 	email = strings.TrimSpace(strings.ToLower(email))
 	if hosted := strings.TrimSpace(strings.ToLower(cfg.HostedDomain)); hosted != "" && !strings.HasSuffix(email, "@"+hosted) {
-		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect account %s is outside the allowed hosted domain", email))
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("%s account %s is outside the allowed hosted domain", providerName, email))
 		return
 	}
 
 	groups, groupsErr := extractStringListClaim(userInfo, cfg.GroupsClaim, "groups")
-	if isMicrosoftEntraConfig(cfg) {
+	if entra {
 		graphGroups, err := fetchMicrosoftGraphGroups(ctx, accessToken)
 		if err != nil && groupsErr != nil {
 			s.redirectAuthResult(w, r, "", "", fmt.Errorf("%v; microsoft graph group lookup also failed: %w", groupsErr, err))
@@ -321,15 +372,18 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 			s.redirectAuthResult(w, r, "", "", groupsErr)
 			return
 		}
-		s.redirectAuthResult(w, r, "", "", fmt.Errorf("OpenID Connect user is not a member of any groups"))
+		s.redirectAuthResult(w, r, "", "", fmt.Errorf("%s user is not a member of any groups", providerName))
 		return
 	}
 	role, _, err := s.users.ResolveOIDCRole(ctx, groups)
+	if entra {
+		role, _, err = s.users.ResolveEntraRole(ctx, groups)
+	}
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
 	}
-	sessionToken, err := s.users.CreateExternalSession(ctx, email, "oidc", role)
+	sessionToken, err := s.users.CreateExternalSession(ctx, email, authSource, role)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return

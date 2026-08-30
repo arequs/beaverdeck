@@ -37,15 +37,14 @@ func (c *Client) BuildInsights(ctx context.Context, namespaces []string, categor
 	if len(nsList) == 0 {
 		return nil, nil
 	}
-	insightCategory := normalizeInsightCategory(firstString(categories))
-	includeAll := insightCategory == ""
-	includeNodes := includeAll || insightCategory == "nodes"
-	includeWorkloads := includeAll || insightCategory == "workloads"
-	includeGPUChecks := includeAll || insightCategory == "gpu"
-	includeNetworking := includeAll || insightCategory == "networking"
-	includeStorage := includeAll || insightCategory == "storage"
-	includeSecurity := includeAll || insightCategory == "security"
-	includeConfiguration := includeAll || insightCategory == "configuration"
+	insightCategories, includeAll := normalizeInsightCategories(categories)
+	includeNodes := includeAll || insightCategories["nodes"]
+	includeWorkloads := includeAll || insightCategories["workloads"]
+	includeGPUChecks := includeAll || insightCategories["gpu"]
+	includeNetworking := includeAll || insightCategories["networking"]
+	includeStorage := includeAll || insightCategories["storage"]
+	includeSecurity := includeAll || insightCategories["security"]
+	includeConfiguration := includeAll || insightCategories["configuration"]
 	includeNodeResourceChecks := includeNodes
 	includePodResourceChecks := includeWorkloads
 	includePodScan := includeWorkloads || includeNodeResourceChecks || includeGPUChecks || includeSecurity || includeConfiguration
@@ -104,7 +103,11 @@ func (c *Client) BuildInsights(ctx context.Context, namespaces []string, categor
 	pvcStatsAvailable := false
 	if includeStorage {
 		var err error
-		pvcUsageByKey, pvcStatsAvailable, err = c.collectPVCVolumeStats(ctx)
+		if nodesLoaded {
+			pvcUsageByKey, pvcStatsAvailable, err = c.collectPVCVolumeStatsForNodes(ctx, nodes.Items)
+		} else {
+			pvcUsageByKey, pvcStatsAvailable, err = c.collectPVCVolumeStats(ctx)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1442,11 +1445,23 @@ func (c *Client) BuildInsights(ctx context.Context, namespaces []string, categor
 	return alerts, nil
 }
 
-func firstString(values []string) string {
+func normalizeInsightCategories(values []string) (map[string]bool, bool) {
+	result := make(map[string]bool)
 	if len(values) == 0 {
-		return ""
+		return result, true
 	}
-	return values[0]
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			normalized := normalizeInsightCategory(part)
+			if normalized == "" {
+				return map[string]bool{}, true
+			}
+			if normalized != unsupportedInsightCategory {
+				result[normalized] = true
+			}
+		}
+	}
+	return result, false
 }
 
 func normalizeInsightCategory(value string) string {

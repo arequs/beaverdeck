@@ -41,6 +41,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/auth/google/callback", s.authGoogleCallback)
 	mux.HandleFunc("GET /api/auth/oidc/start", s.authOIDCStart)
 	mux.HandleFunc("GET /api/auth/oidc/callback", s.authOIDCCallback)
+	mux.HandleFunc("GET /api/auth/entra/start", s.authEntraStart)
 
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/me", s.me)
@@ -67,6 +68,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/oidc/mappings", s.adminOIDCMappingsList)
 	mux.HandleFunc("POST /api/admin/oidc/mappings", s.adminOIDCMappingsUpsert)
 	mux.HandleFunc("POST /api/admin/oidc/mappings/delete", s.adminOIDCMappingsDelete)
+	mux.HandleFunc("GET /api/admin/entra/config", s.adminEntraConfigGet)
+	mux.HandleFunc("POST /api/admin/entra/config", s.adminEntraConfigUpdate)
+	mux.HandleFunc("POST /api/admin/entra/config/test", s.adminEntraConfigTest)
+	mux.HandleFunc("POST /api/admin/entra/reset", s.adminEntraReset)
+	mux.HandleFunc("GET /api/admin/entra/mappings", s.adminEntraMappingsList)
+	mux.HandleFunc("POST /api/admin/entra/mappings", s.adminEntraMappingsUpsert)
+	mux.HandleFunc("POST /api/admin/entra/mappings/delete", s.adminEntraMappingsDelete)
 	mux.HandleFunc("GET /api/admin/config/export", s.adminConfigExport)
 	mux.HandleFunc("POST /api/admin/config/import", s.adminConfigImport)
 

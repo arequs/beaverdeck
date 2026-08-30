@@ -53,5 +53,6 @@ func (s *Server) adminConfigImport(w http.ResponseWriter, r *http.Request) {
 		"roles":           len(normalized.Roles),
 		"google_mappings": len(normalized.Google.Mappings),
 		"oidc_mappings":   len(normalized.OIDC.Mappings),
+		"entra_mappings":  len(normalized.Entra.Mappings),
 	})
 }

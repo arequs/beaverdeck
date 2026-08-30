@@ -2,8 +2,8 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool
 type: application
-version: 2.2.5
-appVersion: "1.6.0"
+version: 2.2.6
+appVersion: "1.6.1"
 home: https://beaverdeck.io
 sources:
   - https://github.com/arequs/beaverdeck
@@ -11,14 +11,20 @@ icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.pn
 annotations:
   artifacthub.io/changes: |
     - kind: added
-      description: "Added pod-scoped Restart Diagnostics snapshots with bounded metrics, events, logs, node context, and persistent-storage details."
-    - kind: added
-      description: "Added dynamic CRD and custom-resource browsing with namespace-aware actions."
-    - kind: added
-      description: "Added Applications inventory and history for Helm releases and Argo CD Applications."
-    - kind: security
-      description: "Updated Go 1.27, closed the Apply YAML namespace bypass, and updated vulnerable dependencies."
-    - kind: security
-      description: "Enabled RuntimeDefault seccomp and a read-only root filesystem, bounded request amplification, and made auth Secret persistence atomic."
+      description: "Added an RBAC-scoped Dashboard as the default post-login view with health, capacity, readiness, event, inventory, and Insights charts."
     - kind: changed
-      description: "Added wildcard custom-resource and explicit pod-eviction RBAC; review the generated ClusterRole before upgrade."
+      description: "Dashboard panels now load progressively, and allowed Insights categories share one Kubernetes resource scan for faster multi-namespace views."
+    - kind: changed
+      description: "Grouped Insight results by check type with compact affected-resource rows."
+    - kind: changed
+      description: "Replaced the native Apply YAML template selector with a BeaverDeck-styled picker."
+    - kind: changed
+      description: "Added RBAC-aware bulk actions across supported resource tables and a reconnect action for interrupted Pod Exec sessions."
+    - kind: changed
+      description: "Moved Pod and Workload Follow to bounded authenticated live streams that retain logs while autoscroll is paused and safely handle oversized lines."
+    - kind: fixed
+      description: "Separated generic OIDC and Azure Entra ID configuration, mappings, and login flows so both can be enabled simultaneously."
+    - kind: fixed
+      description: "Corrected all-passing Dashboard Insight scores and ordering of modern Kubernetes Events that use eventTime."
+    - kind: fixed
+      description: "Kept Restart Diagnostics within a fixed-width modal and retained delayed pre-incident Metrics API samples."

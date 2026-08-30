@@ -14,8 +14,8 @@ export default function BottomDock({
   closeTab,
   activeBottomTab,
   upsertTab,
-  scheduleLogsScrollToBottom,
-  refreshLogTab,
+  setLogFollow,
+  refreshLogAction,
   changeLogContainer,
   refreshManifestTab,
   refreshYamlTab,
@@ -36,6 +36,7 @@ export default function BottomDock({
   refreshAll,
   isDegradedReady,
   openPodExecTab,
+  reconnectPodExecTab,
   deletePodByRef,
   selectedPod,
   setSelectedPod,
@@ -172,12 +173,7 @@ export default function BottomDock({
                   <input
                     type="checkbox"
                     checked={Boolean(activeBottomTab.follow)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        scheduleLogsScrollToBottom();
-                      }
-                      upsertTab({ id: activeBottomTab.id, follow: e.target.checked }, false);
-                    }}
+                    onChange={(e) => setLogFollow(activeBottomTab.id, e.target.checked)}
                   />
                   <span>Follow tail</span>
                 </label>
@@ -191,7 +187,17 @@ export default function BottomDock({
                     ))}
                   </select>
                 ) : null}
-                <button onClick={() => safe(() => refreshLogTab(activeBottomTab.id, false, { forceScrollToBottom: true }))}>Refresh</button>
+                <button onClick={() => refreshLogAction(activeBottomTab.id)}>Refresh</button>
+                {activeBottomTab.streamActive !== false ? (
+                  <span className="small-hint" title={activeBottomTab.streamError || ''}>
+                    {activeBottomTab.streamConnected
+                      ? (activeBottomTab.follow ? 'Live' : 'Live · autoscroll paused')
+                      : 'Connecting...'}
+                  </span>
+                ) : null}
+                {activeBottomTab.streamActive === false && activeBottomTab.streamError ? (
+                  <span className="small-hint" title={activeBottomTab.streamError}>Stream stopped</span>
+                ) : null}
               </div>
               <div className="logs-output-wrap" ref={logsOutputRef} onScroll={handleLogsScroll}>
                 <LogViewer
@@ -329,24 +335,31 @@ export default function BottomDock({
           )}
 
           {!activeBottomTab?.loading && activeBottomTab?.type === 'exec' && (
-            <div className={`exec-pane ${(activeBottomTab.containers || []).length > 1 ? 'exec-pane-with-toolbar' : ''}`.trim()}>
+            <div className={`exec-pane ${(activeBottomTab.containers || []).length > 1 || !activeBottomTab.connected ? 'exec-pane-with-toolbar' : ''}`.trim()}>
               {activeBottomTab?.error ? <div className="dock-error">{activeBottomTab.error}</div> : null}
-              {(activeBottomTab.containers || []).length > 1 ? (
+              {(activeBottomTab.containers || []).length > 1 || !activeBottomTab.connected ? (
                 <div className="toolbar fixed-toolbar">
-                  <span className="small-hint">Container</span>
-                  <select
-                    value={activeBottomTab.container || ''}
-                    onChange={(e) => safe(() => openPodExecTab(
-                      activeBottomTab.namespace,
-                      activeBottomTab.pod,
-                      e.target.value,
-                      activeBottomTab.containers
-                    ))}
-                  >
-                    {(activeBottomTab.containers || []).map((container) => (
-                      <option key={container} value={container}>{container}</option>
-                    ))}
-                  </select>
+                  {(activeBottomTab.containers || []).length > 1 ? (
+                    <>
+                      <span className="small-hint">Container</span>
+                      <select
+                        value={activeBottomTab.container || ''}
+                        onChange={(e) => safe(() => openPodExecTab(
+                          activeBottomTab.namespace,
+                          activeBottomTab.pod,
+                          e.target.value,
+                          activeBottomTab.containers
+                        ))}
+                      >
+                        {(activeBottomTab.containers || []).map((container) => (
+                          <option key={container} value={container}>{container}</option>
+                        ))}
+                      </select>
+                    </>
+                  ) : null}
+                  {!activeBottomTab.connected ? (
+                    <button type="button" onClick={() => reconnectPodExecTab(activeBottomTab.id)}>Reconnect</button>
+                  ) : null}
                 </div>
               ) : null}
               <div className="exec-status">

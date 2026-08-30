@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -33,6 +34,26 @@ func TestGetSecretDecodedDataReturnsDecodedValues(t *testing.T) {
 
 	if decoded["username"] != "admin" || decoded["password"] != "p@ss" {
 		t.Fatalf("expected decoded secret values, got: %#v", decoded)
+	}
+}
+
+func TestWorkloadPodsUsesSelectorAndSortsMatches(t *testing.T) {
+	client := &Client{core: fake.NewSimpleClientset(
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "demo"},
+			Spec:       appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}}},
+		},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "demo-b", Labels: map[string]string{"app": "demo"}}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "demo-a", Labels: map[string]string{"app": "demo"}}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "other", Labels: map[string]string{"app": "other"}}},
+	)}
+
+	pods, err := client.workloadPods(context.Background(), "apps", "Deployment", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pods) != 2 || pods[0].Name != "demo-a" || pods[1].Name != "demo-b" {
+		t.Fatalf("workload pods = %#v, want demo-a and demo-b", pods)
 	}
 }
 

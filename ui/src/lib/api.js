@@ -27,7 +27,7 @@ export async function publicApi(path, options = {}) {
 }
 
 export function createApi(token, username) {
-  return async function api(path, options = {}) {
+  async function authenticatedFetch(path, options = {}) {
     const headers = {
       ...(options.headers || {}),
       Authorization: `Bearer ${token}`,
@@ -47,6 +47,24 @@ export function createApi(token, username) {
       }
       window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { message: errorText } }));
     }
+    return response;
+  }
+
+  const api = async function api(path, options = {}) {
+    const response = await authenticatedFetch(path, options);
     return readApiResponse(response);
   };
+
+  api.stream = async function stream(path, options = {}) {
+    const response = await authenticatedFetch(path, options);
+    if (!response.ok) {
+      await readApiResponse(response);
+    }
+    if (!response.body) {
+      throw new Error('Streaming response body is unavailable');
+    }
+    return response.body;
+  };
+
+  return api;
 }

@@ -18,6 +18,7 @@ import (
 const (
 	ConfigSnapshotSchemaVersion = 1
 	defaultOIDCScopes           = "openid email profile groups"
+	defaultEntraScopes          = "openid email profile User.Read GroupMember.Read.All"
 	defaultOIDCEmailClaim       = "email"
 	defaultOIDCGroupsClaim      = "groups"
 )
@@ -30,6 +31,7 @@ type ConfigSnapshot struct {
 	Users         []ConfigUser     `json:"users"`
 	Google        ConfigGoogleAuth `json:"google"`
 	OIDC          ConfigOIDCAuth   `json:"oidc"`
+	Entra         ConfigOIDCAuth   `json:"entra"`
 }
 
 type ConfigUser struct {
@@ -47,6 +49,7 @@ type configSnapshotYAML struct {
 	Users         []configUserYAML     `json:"users"`
 	Google        configGoogleAuthYAML `json:"google"`
 	OIDC          configOIDCAuthYAML   `json:"oidc"`
+	Entra         *configOIDCAuthYAML  `json:"entra,omitempty"`
 }
 
 type configRoleYAML struct {
@@ -74,6 +77,7 @@ type configSnapshotOutputYAML struct {
 	Users         []configUserYAML       `json:"users"`
 	Google        configGoogleAuthYAML   `json:"google"`
 	OIDC          configOIDCAuthYAML     `json:"oidc"`
+	Entra         configOIDCAuthYAML     `json:"entra"`
 }
 
 type configRoleOutputYAML struct {
@@ -184,6 +188,15 @@ func EncodeConfigSnapshot(snapshot ConfigSnapshot) ([]byte, error) {
 }
 
 func configSnapshotFromYAML(raw configSnapshotYAML) (ConfigSnapshot, error) {
+	entra := configOIDCAuthYAML{}
+	if raw.Entra != nil {
+		entra = *raw.Entra
+	} else if looksLikeEntraOIDCConfig(raw.OIDC.Config) {
+		// Before Entra had its own config section, the UI stored it in oidc.
+		// Move that legacy value once so upgrades preserve the configured provider.
+		entra = raw.OIDC
+		raw.OIDC = configOIDCAuthYAML{}
+	}
 	roles := make([]RoleDef, 0, len(raw.Roles))
 	for _, role := range raw.Roles {
 		permissions, err := expandedPermissionsJSON(role.Permissions)
@@ -218,6 +231,13 @@ func configSnapshotFromYAML(raw configSnapshotYAML) (ConfigSnapshot, error) {
 			Role:      item.Role,
 		})
 	}
+	entraMappings := make([]OIDCGroupRole, 0, len(entra.Mappings))
+	for _, item := range entra.Mappings {
+		entraMappings = append(entraMappings, OIDCGroupRole{
+			GroupName: item.GroupName,
+			Role:      item.Role,
+		})
+	}
 	return ConfigSnapshot{
 		SchemaVersion: raw.SchemaVersion,
 		ExportedAt:    raw.ExportedAt,
@@ -226,6 +246,7 @@ func configSnapshotFromYAML(raw configSnapshotYAML) (ConfigSnapshot, error) {
 		Users:         users,
 		Google:        ConfigGoogleAuth{Config: raw.Google.Config, Mappings: googleMappings},
 		OIDC:          ConfigOIDCAuth{Config: raw.OIDC.Config, Mappings: oidcMappings},
+		Entra:         ConfigOIDCAuth{Config: entra.Config, Mappings: entraMappings},
 	}, nil
 }
 
@@ -261,6 +282,10 @@ func configSnapshotToYAML(snapshot ConfigSnapshot) (configSnapshotOutputYAML, er
 	for _, item := range snapshot.OIDC.Mappings {
 		oidcMappings = append(oidcMappings, configOIDCMappingYAML{GroupName: item.GroupName, Role: item.Role})
 	}
+	entraMappings := make([]configOIDCMappingYAML, 0, len(snapshot.Entra.Mappings))
+	for _, item := range snapshot.Entra.Mappings {
+		entraMappings = append(entraMappings, configOIDCMappingYAML{GroupName: item.GroupName, Role: item.Role})
+	}
 	return configSnapshotOutputYAML{
 		SchemaVersion: snapshot.SchemaVersion,
 		ExportedAt:    snapshot.ExportedAt,
@@ -269,6 +294,7 @@ func configSnapshotToYAML(snapshot ConfigSnapshot) (configSnapshotOutputYAML, er
 		Users:         users,
 		Google:        configGoogleAuthYAML{Config: snapshot.Google.Config, Mappings: googleMappings},
 		OIDC:          configOIDCAuthYAML{Config: snapshot.OIDC.Config, Mappings: oidcMappings},
+		Entra:         configOIDCAuthYAML{Config: snapshot.Entra.Config, Mappings: entraMappings},
 	}, nil
 }
 
@@ -410,6 +436,10 @@ func NormalizeConfigSnapshot(snapshot ConfigSnapshot) (ConfigSnapshot, error) {
 	if err != nil {
 		return ConfigSnapshot{}, err
 	}
+	entra, err := normalizeConfigEntra(snapshot.Entra, roleDefs, now)
+	if err != nil {
+		return ConfigSnapshot{}, err
+	}
 
 	return ConfigSnapshot{
 		SchemaVersion: ConfigSnapshotSchemaVersion,
@@ -419,6 +449,7 @@ func NormalizeConfigSnapshot(snapshot ConfigSnapshot) (ConfigSnapshot, error) {
 		Users:         users,
 		Google:        google,
 		OIDC:          oidc,
+		Entra:         entra,
 	}, nil
 }
 
@@ -567,13 +598,21 @@ func normalizeConfigGoogle(input ConfigGoogleAuth, roleDefs map[string]RoleDef, 
 }
 
 func normalizeConfigOIDC(input ConfigOIDCAuth, roleDefs map[string]RoleDef, now time.Time) (ConfigOIDCAuth, error) {
+	return normalizeOIDCProviderConfig(input, roleDefs, now, "oidc", "OpenID Connect", defaultOIDCScopes)
+}
+
+func normalizeConfigEntra(input ConfigOIDCAuth, roleDefs map[string]RoleDef, now time.Time) (ConfigOIDCAuth, error) {
+	return normalizeOIDCProviderConfig(input, roleDefs, now, "entra", "Azure Entra ID", defaultEntraScopes)
+}
+
+func normalizeOIDCProviderConfig(input ConfigOIDCAuth, roleDefs map[string]RoleDef, now time.Time, providerKey, defaultProviderName, defaultScopes string) (ConfigOIDCAuth, error) {
 	providerName := strings.TrimSpace(input.Config.ProviderName)
 	if providerName == "" {
-		providerName = "OpenID Connect"
+		providerName = defaultProviderName
 	}
 	scopes := strings.TrimSpace(input.Config.Scopes)
 	if scopes == "" {
-		scopes = defaultOIDCScopes
+		scopes = defaultScopes
 	}
 	emailClaim := strings.TrimSpace(input.Config.EmailClaim)
 	if emailClaim == "" {
@@ -594,7 +633,9 @@ func normalizeConfigOIDC(input ConfigOIDCAuth, roleDefs map[string]RoleDef, now 
 		GroupsClaim:  groupsClaim,
 		UpdatedAt:    strings.TrimSpace(input.Config.UpdatedAt),
 	}
-	if err := validateConfigTextFields("oidc config", map[string]string{
+	configStage := providerKey + " config"
+	mappingsStage := providerKey + " mappings"
+	if err := validateConfigTextFields(configStage, map[string]string{
 		"provider_name": cfg.ProviderName,
 		"issuer_url":    cfg.IssuerURL,
 		"client_id":     cfg.ClientID,
@@ -604,24 +645,24 @@ func normalizeConfigOIDC(input ConfigOIDCAuth, roleDefs map[string]RoleDef, now 
 		"email_claim":   cfg.EmailClaim,
 		"groups_claim":  cfg.GroupsClaim,
 	}, 4096); err != nil {
-		return ConfigOIDCAuth{}, importStageError("oidc config", err)
+		return ConfigOIDCAuth{}, importStageError(configStage, err)
 	}
 
 	mappings := make([]OIDCGroupRole, 0, len(input.Mappings))
 	seen := make(map[string]struct{}, len(input.Mappings))
 	for _, item := range input.Mappings {
-		groupName, err := cleanConfigField("oidc group", item.GroupName, 512, false)
+		groupName, err := cleanConfigField(providerKey+" group", item.GroupName, 512, false)
 		if err != nil {
-			return ConfigOIDCAuth{}, importStageError("oidc mappings", err)
+			return ConfigOIDCAuth{}, importStageError(mappingsStage, err)
 		}
 		groupKey := strings.ToLower(groupName)
 		if _, ok := seen[groupKey]; ok {
-			return ConfigOIDCAuth{}, importStageError("oidc mappings", fmt.Errorf("duplicate oidc group %s", groupName))
+			return ConfigOIDCAuth{}, importStageError(mappingsStage, fmt.Errorf("duplicate %s group %s", providerKey, groupName))
 		}
 		seen[groupKey] = struct{}{}
 		role := Role(strings.TrimSpace(strings.ToLower(string(item.Role))))
 		if _, ok := roleDefs[string(role)]; !ok {
-			return ConfigOIDCAuth{}, importStageError("oidc mappings", fmt.Errorf("oidc group %s references missing role %s", groupName, role))
+			return ConfigOIDCAuth{}, importStageError(mappingsStage, fmt.Errorf("%s group %s references missing role %s", providerKey, groupName, role))
 		}
 		createdAt := item.CreatedAt
 		if createdAt.IsZero() {
@@ -633,6 +674,14 @@ func normalizeConfigOIDC(input ConfigOIDCAuth, roleDefs map[string]RoleDef, now 
 		return strings.ToLower(mappings[i].GroupName) < strings.ToLower(mappings[j].GroupName)
 	})
 	return ConfigOIDCAuth{Config: cfg, Mappings: mappings}, nil
+}
+
+func looksLikeEntraOIDCConfig(cfg OIDCConfig) bool {
+	value := strings.ToLower(strings.TrimSpace(cfg.ProviderName) + " " + strings.TrimSpace(cfg.IssuerURL))
+	return strings.Contains(value, "entra") ||
+		strings.Contains(value, "azure") ||
+		strings.Contains(value, "microsoftonline.com") ||
+		strings.Contains(value, "sts.windows.net")
 }
 
 type normalizedRolePermissions struct {
@@ -910,6 +959,12 @@ func defaultConfigSnapshot(now time.Time) ConfigSnapshot {
 			EmailClaim:   defaultOIDCEmailClaim,
 			GroupsClaim:  defaultOIDCGroupsClaim,
 		}},
+		Entra: ConfigOIDCAuth{Config: OIDCConfig{
+			ProviderName: "Azure Entra ID",
+			Scopes:       defaultEntraScopes,
+			EmailClaim:   defaultOIDCEmailClaim,
+			GroupsClaim:  defaultOIDCGroupsClaim,
+		}},
 	}
 }
 
@@ -939,6 +994,10 @@ func (s *Store) applyConfigSnapshotLocked(snapshot ConfigSnapshot) {
 	for _, item := range snapshot.OIDC.Mappings {
 		oidcMappings[strings.ToLower(strings.TrimSpace(item.GroupName))] = item
 	}
+	entraMappings := make(map[string]OIDCGroupRole, len(snapshot.Entra.Mappings))
+	for _, item := range snapshot.Entra.Mappings {
+		entraMappings[strings.ToLower(strings.TrimSpace(item.GroupName))] = item
+	}
 	s.roles = roles
 	s.users = users
 	s.sessionVersions = nextVersions
@@ -946,6 +1005,8 @@ func (s *Store) applyConfigSnapshotLocked(snapshot ConfigSnapshot) {
 	s.googleMappings = googleMappings
 	s.oidcConfig = snapshot.OIDC.Config
 	s.oidcMappings = oidcMappings
+	s.entraConfig = snapshot.Entra.Config
+	s.entraMappings = entraMappings
 }
 
 func (s *Store) snapshotLocked() ConfigSnapshot {
@@ -976,6 +1037,14 @@ func (s *Store) snapshotLocked() ConfigSnapshot {
 		return strings.ToLower(oidcMappings[i].GroupName) < strings.ToLower(oidcMappings[j].GroupName)
 	})
 
+	entraMappings := make([]OIDCGroupRole, 0, len(s.entraMappings))
+	for _, item := range s.entraMappings {
+		entraMappings = append(entraMappings, item)
+	}
+	sort.Slice(entraMappings, func(i, j int) bool {
+		return strings.ToLower(entraMappings[i].GroupName) < strings.ToLower(entraMappings[j].GroupName)
+	})
+
 	return ConfigSnapshot{
 		SchemaVersion: ConfigSnapshotSchemaVersion,
 		Initialized:   s.hasLocalAdminLocked(),
@@ -983,6 +1052,7 @@ func (s *Store) snapshotLocked() ConfigSnapshot {
 		Users:         users,
 		Google:        ConfigGoogleAuth{Config: s.googleConfig, Mappings: googleMappings},
 		OIDC:          ConfigOIDCAuth{Config: s.oidcConfig, Mappings: oidcMappings},
+		Entra:         ConfigOIDCAuth{Config: s.entraConfig, Mappings: entraMappings},
 	}
 }
 

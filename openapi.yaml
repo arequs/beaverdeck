@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: BeaverDeck API
-  version: 1.6.0
+  version: 1.6.1
 servers:
   - url: /
 security:
@@ -33,6 +33,10 @@ paths:
         - in: query
           name: namespace
           schema: { type: string }
+        - in: query
+          name: include_metrics
+          description: Set to 0 to skip per-pod Metrics API collection.
+          schema: { type: integer, enum: [0, 1], default: 1 }
       responses: { '200': { description: Pods } }
   /api/podlogs:
     get:
@@ -53,12 +57,44 @@ paths:
         - in: query
           name: follow
           schema: { type: boolean }
-      responses: { '200': { description: Logs stream/text } }
+      responses:
+        '200':
+          description: Bounded text snapshot, or authenticated SSE when follow is true.
+  /api/workloadlogs:
+    get:
+      parameters:
+        - in: query
+          name: namespace
+          schema: { type: string }
+        - in: query
+          name: kind
+          required: true
+          schema: { type: string }
+        - in: query
+          name: name
+          required: true
+          schema: { type: string }
+        - in: query
+          name: tail
+          schema: { type: integer }
+        - in: query
+          name: follow
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Bounded text snapshot, or multiplexed authenticated SSE when follow is true.
   /api/events:
     get:
       parameters:
         - in: query
           name: namespace
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+        - in: query
+          name: type
+          description: Optional Kubernetes Event type, for example Warning.
           schema: { type: string }
       responses: { '200': { description: Events } }
   /api/deployments/scale:

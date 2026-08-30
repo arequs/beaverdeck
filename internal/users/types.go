@@ -91,6 +91,8 @@ type Store struct {
 	googleMappings    map[string]GoogleGroupRole
 	oidcConfig        OIDCConfig
 	oidcMappings      map[string]OIDCGroupRole
+	entraConfig       OIDCConfig
+	entraMappings     map[string]OIDCGroupRole
 	configMutationMu  sync.Mutex
 	configSaverMu     sync.RWMutex
 	configSaver       func(context.Context, ConfigSnapshot) error

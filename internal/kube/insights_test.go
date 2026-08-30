@@ -177,6 +177,46 @@ func TestNormalizeInsightCategoryNewSections(t *testing.T) {
 	}
 }
 
+func TestNormalizeInsightCategoriesCombinesAndDeduplicates(t *testing.T) {
+	categories, all := normalizeInsightCategories([]string{"nodes, workloads", "security", "nodes"})
+	if all {
+		t.Fatal("combined explicit categories must not enable all categories")
+	}
+	want := []string{"nodes", "workloads", "security"}
+	for _, category := range want {
+		if !categories[category] {
+			t.Fatalf("expected category %q in %#v", category, categories)
+		}
+	}
+	if len(categories) != len(want) {
+		t.Fatalf("unexpected normalized categories: %#v", categories)
+	}
+
+	if _, all := normalizeInsightCategories([]string{"nodes,all"}); !all {
+		t.Fatal("all in a combined category list must enable all categories")
+	}
+}
+
+func TestBuildInsightsCombinedCategoriesScansSharedResourcesOnce(t *testing.T) {
+	clientset := fake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+		Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+	})
+	client := newInsightTestClientWithClientset(clientset)
+	if _, err := client.BuildInsights(context.Background(), []string{"default"}, "nodes,workloads,storage,security"); err != nil {
+		t.Fatal(err)
+	}
+	if got := countListActions(clientset.Actions(), "pods"); got != 1 {
+		t.Fatalf("combined categories listed pods %d times, want 1; actions=%#v", got, clientset.Actions())
+	}
+	if got := countListActions(clientset.Actions(), "nodes"); got != 1 {
+		t.Fatalf("combined categories listed nodes %d times, want 1; actions=%#v", got, clientset.Actions())
+	}
+	if got := countListActions(clientset.Actions(), "events"); got != 1 {
+		t.Fatalf("combined categories listed events %d times, want 1; actions=%#v", got, clientset.Actions())
+	}
+}
+
 func TestSuppressedInsightsConfigMapAddedAndRemoved(t *testing.T) {
 	ctx := context.Background()
 	ref := SuppressedInsightsRef{Namespace: "beaverdeck", Name: "beaverdeck-suppressed-insights", Key: "suppressed_insights.json"}

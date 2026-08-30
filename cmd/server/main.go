@@ -171,12 +171,13 @@ func initializeUserConfig(ctx context.Context, kc *kube.Client, userStore *users
 		} else {
 			imported = true
 			log.Printf(
-				"beaverdeck auth config import succeeded: initialized=%v users=%d roles=%d google_mappings=%d oidc_mappings=%d",
+				"beaverdeck auth config import succeeded: initialized=%v users=%d roles=%d google_mappings=%d oidc_mappings=%d entra_mappings=%d",
 				normalized.Initialized,
 				len(normalized.Users),
 				len(normalized.Roles),
 				len(normalized.Google.Mappings),
 				len(normalized.OIDC.Mappings),
+				len(normalized.Entra.Mappings),
 			)
 		}
 	} else if found {

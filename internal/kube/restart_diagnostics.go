@@ -207,15 +207,18 @@ type diagnosticPodMetric struct {
 	Namespace string
 	Pod       string
 	Node      string
+	SampledAt time.Time
 	Usage     usageValues
 }
 
 type restartMetricSample struct {
-	At         time.Time
-	Source     string
-	Containers map[string]usageValues
-	Pods       map[string]diagnosticPodMetric
-	Nodes      map[string]usageValues
+	At             time.Time
+	Source         string
+	Containers     map[string]usageValues
+	ContainerTimes map[string]time.Time
+	Pods           map[string]diagnosticPodMetric
+	Nodes          map[string]usageValues
+	NodeTimes      map[string]time.Time
 }
 
 type restartMetricRing struct {
@@ -270,6 +273,82 @@ func (r *restartMetricRing) closest(target, notAfter time.Time, tolerance time.D
 		}
 		if distance < bestDistance {
 			best = r.items[i]
+			bestDistance = distance
+			found = true
+		}
+	}
+	return best, found && bestDistance <= tolerance
+}
+
+func (r *restartMetricRing) closestUsage(target, notAfter time.Time, tolerance time.Duration, key string, container bool) (usageValues, time.Time, string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	bestUsage := usageValues{}
+	bestTime := time.Time{}
+	bestSource := ""
+	bestDistance := time.Duration(1<<63 - 1)
+	found := false
+	for i := range r.items {
+		sample := r.items[i]
+		var usage usageValues
+		var sampledAt time.Time
+		var ok bool
+		if container {
+			usage, ok = sample.Containers[key]
+			sampledAt = sample.ContainerTimes[key]
+		} else {
+			usage, ok = sample.Nodes[key]
+			sampledAt = sample.NodeTimes[key]
+		}
+		if !ok {
+			continue
+		}
+		if sampledAt.IsZero() {
+			sampledAt = sample.At
+		}
+		if sampledAt.After(notAfter) {
+			continue
+		}
+		distance := sampledAt.Sub(target)
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			bestUsage = usage
+			bestTime = sampledAt
+			bestSource = sample.Source
+			bestDistance = distance
+			found = true
+		}
+	}
+	return bestUsage, bestTime, bestSource, found && bestDistance <= tolerance
+}
+
+func (r *restartMetricRing) closestPodSample(target, notAfter time.Time, tolerance time.Duration, key string) (restartMetricSample, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	best := restartMetricSample{}
+	bestDistance := time.Duration(1<<63 - 1)
+	found := false
+	for i := range r.items {
+		sample := r.items[i]
+		pod, ok := sample.Pods[key]
+		if !ok {
+			continue
+		}
+		sampledAt := pod.SampledAt
+		if sampledAt.IsZero() {
+			sampledAt = sample.At
+		}
+		if sampledAt.After(notAfter) {
+			continue
+		}
+		distance := sampledAt.Sub(target)
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			best = sample
 			bestDistance = distance
 			found = true
 		}
@@ -543,7 +622,8 @@ func (d *RestartDiagnostics) sample(ctx context.Context) {
 
 func (c *Client) collectRestartDiagnosticMetrics(ctx context.Context, namespace string, podStore cache.Store, now time.Time) restartMetricSample {
 	sample := restartMetricSample{
-		At: now, Containers: make(map[string]usageValues), Pods: make(map[string]diagnosticPodMetric), Nodes: make(map[string]usageValues),
+		At: now, Containers: make(map[string]usageValues), ContainerTimes: make(map[string]time.Time),
+		Pods: make(map[string]diagnosticPodMetric), Nodes: make(map[string]usageValues), NodeTimes: make(map[string]time.Time),
 	}
 	podMetricsAvailable := false
 	nodeMetricsAvailable := false
@@ -561,21 +641,28 @@ func (c *Client) collectRestartDiagnosticMetrics(ctx context.Context, namespace 
 			for _, item := range list.Items {
 				ns := item.GetNamespace()
 				podName := item.GetName()
+				sampledAt := metricsAPITimestamp(item.Object, now)
 				containers := containerUsageValuesFromMetricsAPI(item.Object)
 				aggregate := usageValues{}
 				for name, usage := range containers {
-					sample.Containers[containerMetricKey(ns, podName, name)] = usage
+					key := containerMetricKey(ns, podName, name)
+					sample.Containers[key] = usage
+					sample.ContainerTimes[key] = sampledAt
 					aggregate.cpuMilli += usage.cpuMilli
 					aggregate.memoryBytes += usage.memoryBytes
 				}
-				sample.Pods[podMetricKey(ns, podName)] = diagnosticPodMetric{Namespace: ns, Pod: podName, Node: podNodeFromStore(podStore, ns, podName), Usage: aggregate}
+				sample.Pods[podMetricKey(ns, podName)] = diagnosticPodMetric{
+					Namespace: ns, Pod: podName, Node: podNodeFromStore(podStore, ns, podName), SampledAt: sampledAt, Usage: aggregate,
+				}
 			}
 		}
 		nodeList, err := c.dyn.Resource(schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes"}).List(ctx, metav1.ListOptions{})
 		if err == nil && nodeList != nil {
 			nodeMetricsAvailable = true
 			for _, item := range nodeList.Items {
-				sample.Nodes[item.GetName()] = nodeUsageValuesFromMetricsAPI(item.Object)
+				name := item.GetName()
+				sample.Nodes[name] = nodeUsageValuesFromMetricsAPI(item.Object)
+				sample.NodeTimes[name] = metricsAPITimestamp(item.Object, now)
 			}
 		}
 	}
@@ -698,6 +785,18 @@ func nodeUsageValuesFromMetricsAPI(obj map[string]any) usageValues {
 	return usageValuesFromQuantityMap(usage)
 }
 
+func metricsAPITimestamp(obj map[string]any, fallback time.Time) time.Time {
+	raw, found, _ := unstructured.NestedString(obj, "timestamp")
+	if !found || strings.TrimSpace(raw) == "" {
+		return fallback
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
 func usageValuesFromQuantityMap(usage map[string]string) usageValues {
 	obj := make(map[string]any, len(usage))
 	for key, value := range usage {
@@ -747,6 +846,10 @@ func splitPodMetricKey(key string) (string, string) {
 }
 
 func (d *RestartDiagnostics) capture(ctx context.Context, incident restartIncident) error {
+	// Metrics API values carry their own sample timestamp and can still expose the
+	// last pre-restart point when the informer notices the incident. Capture that
+	// point before slower log/event/storage collection advances the scrape window.
+	d.sample(ctx)
 	workload := d.client.resolvePodWorkload(ctx, incident.pod)
 	storage, storageRefs, storageWarnings := d.client.collectRestartDiagnosticStorage(ctx, incident.pod)
 	events, storageEvents, eventsErr := d.client.collectRestartDiagnosticEvents(ctx, incident, storageRefs, d.opts.MaxEvents)
@@ -800,7 +903,7 @@ func (d *RestartDiagnostics) buildSnapshot(incident restartIncident, workload Re
 		snapshot.ContainerMetrics = append(snapshot.ContainerMetrics, d.metricPoint(target, incident.at, offset, containerKey, incident.pod.Spec.NodeName, true))
 		snapshot.NodeMetrics = append(snapshot.NodeMetrics, d.metricPoint(target, incident.at, offset, containerKey, incident.pod.Spec.NodeName, false))
 	}
-	if sample, ok := d.ring.closest(incident.at, incident.at, d.metricTolerance()); ok {
+	if sample, ok := d.ring.closestPodSample(incident.at, incident.at, d.metricTolerance(), podMetricKey(incident.pod.Namespace, incident.pod.Name)); ok {
 		snapshot.NodePods = nodePodsFromSample(sample, incident)
 	}
 	if len(snapshot.ContainerMetrics) > 0 && !snapshot.ContainerMetrics[0].Available {
@@ -822,24 +925,19 @@ func podRestartCount(pod *corev1.Pod) int32 {
 
 func (d *RestartDiagnostics) metricPoint(target, incidentTime time.Time, offset time.Duration, containerKey, node string, container bool) RestartDiagnosticMetricPoint {
 	point := RestartDiagnosticMetricPoint{OffsetSeconds: int64(offset.Seconds()), TargetTime: target.UTC()}
-	sample, ok := d.ring.closest(target, incidentTime, d.metricTolerance())
-	if !ok {
-		return point
-	}
-	var usage usageValues
+	key := node
 	if container {
-		usage, ok = sample.Containers[containerKey]
-	} else {
-		usage, ok = sample.Nodes[node]
+		key = containerKey
 	}
+	usage, sampledAt, source, ok := d.ring.closestUsage(target, incidentTime, d.metricTolerance(), key, container)
 	if !ok {
 		return point
 	}
 	point.Available = true
-	point.SampledAt = sample.At.UTC()
+	point.SampledAt = sampledAt.UTC()
 	point.CPUUsedMilli = usage.cpuMilli
 	point.MemoryBytes = usage.memoryBytes
-	point.Source = sample.Source
+	point.Source = source
 	return point
 }
 
@@ -862,14 +960,12 @@ func (d *RestartDiagnostics) collectNodeResources(ctx context.Context, incident 
 		MemoryAllocatableBytes: node.Status.Allocatable.Memory().Value(),
 		MemoryCapacityBytes:    node.Status.Capacity.Memory().Value(),
 	}
-	if sample, ok := d.ring.closest(incident.at, incident.at, d.metricTolerance()); ok {
-		if usage, available := sample.Nodes[incident.pod.Spec.NodeName]; available {
-			out.MetricsAvailable = true
-			out.SampledAt = sample.At.UTC()
-			out.Source = sample.Source
-			out.CPUUsedMilli = usage.cpuMilli
-			out.MemoryUsedBytes = usage.memoryBytes
-		}
+	if usage, sampledAt, source, ok := d.ring.closestUsage(incident.at, incident.at, d.metricTolerance(), incident.pod.Spec.NodeName, false); ok {
+		out.MetricsAvailable = true
+		out.SampledAt = sampledAt.UTC()
+		out.Source = source
+		out.CPUUsedMilli = usage.cpuMilli
+		out.MemoryUsedBytes = usage.memoryBytes
 	}
 	return out, nil
 }

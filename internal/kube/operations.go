@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,6 +27,12 @@ import (
 )
 
 const maxLogResponseBytes = 16 * 1024 * 1024
+
+type WorkloadLogStream struct {
+	Pod    string
+	Stream io.ReadCloser
+	Error  error
+}
 
 func (c *Client) ListClusterRoles(ctx context.Context) ([]ClusterRoleInfo, error) {
 	items, err := c.core.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
@@ -163,68 +170,13 @@ func (c *Client) defaultPodContainer(ctx context.Context, ns, pod, container str
 }
 
 func (c *Client) WorkloadLogs(ctx context.Context, ns, kind, name string, tail int64) (string, error) {
-	var pods []corev1.Pod
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "deployment":
-		obj, err := c.core.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return "", err
-		}
-		pods, err = c.podsForSelector(ctx, ns, obj.Spec.Selector)
-		if err != nil {
-			return "", err
-		}
-	case "statefulset":
-		obj, err := c.core.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return "", err
-		}
-		pods, err = c.podsForSelector(ctx, ns, obj.Spec.Selector)
-		if err != nil {
-			return "", err
-		}
-	case "daemonset":
-		obj, err := c.core.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return "", err
-		}
-		pods, err = c.podsForSelector(ctx, ns, obj.Spec.Selector)
-		if err != nil {
-			return "", err
-		}
-	case "job":
-		podList, err := c.core.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
-			LabelSelector: metav1.FormatLabelSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"job-name": name}}),
-		})
-		if err != nil {
-			return "", err
-		}
-		pods = podList.Items
-	case "cronjob":
-		jobs, err := c.core.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return "", err
-		}
-		for _, job := range jobs.Items {
-			if !isOwnedBy(job.OwnerReferences, "CronJob", name) {
-				continue
-			}
-			podList, err := c.core.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
-				LabelSelector: metav1.FormatLabelSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"job-name": job.Name}}),
-			})
-			if err != nil {
-				return "", err
-			}
-			pods = append(pods, podList.Items...)
-		}
-	default:
-		return "", fmt.Errorf("unsupported workload kind: %s", kind)
+	pods, err := c.workloadPods(ctx, ns, kind, name)
+	if err != nil {
+		return "", err
 	}
 	if len(pods) == 0 {
 		return fmt.Sprintf("No pods found for %s/%s in namespace %s", kind, name, ns), nil
 	}
-
-	sort.Slice(pods, func(i, j int) bool { return pods[i].Name < pods[j].Name })
 
 	var b strings.Builder
 	for _, pod := range pods {
@@ -256,6 +208,82 @@ func (c *Client) WorkloadLogs(ctx context.Context, ns, kind, name string, tail i
 	}
 
 	return b.String(), nil
+}
+
+func (c *Client) FollowWorkloadLogs(ctx context.Context, ns, kind, name string, tail int64) ([]WorkloadLogStream, error) {
+	pods, err := c.workloadPods(ctx, ns, kind, name)
+	if err != nil {
+		return nil, err
+	}
+	streams := make([]WorkloadLogStream, 0, len(pods))
+	for _, pod := range pods {
+		stream, streamErr := c.FollowPodLogs(ctx, ns, pod.Name, "", tail)
+		streams = append(streams, WorkloadLogStream{Pod: pod.Name, Stream: stream, Error: streamErr})
+	}
+	return streams, nil
+}
+
+func (c *Client) workloadPods(ctx context.Context, ns, kind, name string) ([]corev1.Pod, error) {
+	var pods []corev1.Pod
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "deployment":
+		obj, err := c.core.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		pods, err = c.podsForSelector(ctx, ns, obj.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+	case "statefulset":
+		obj, err := c.core.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		pods, err = c.podsForSelector(ctx, ns, obj.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+	case "daemonset":
+		obj, err := c.core.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		pods, err = c.podsForSelector(ctx, ns, obj.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+	case "job":
+		podList, err := c.core.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+			LabelSelector: metav1.FormatLabelSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"job-name": name}}),
+		})
+		if err != nil {
+			return nil, err
+		}
+		pods = podList.Items
+	case "cronjob":
+		jobs, err := c.core.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		for _, job := range jobs.Items {
+			if !isOwnedBy(job.OwnerReferences, "CronJob", name) {
+				continue
+			}
+			podList, err := c.core.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+				LabelSelector: metav1.FormatLabelSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"job-name": job.Name}}),
+			})
+			if err != nil {
+				return nil, err
+			}
+			pods = append(pods, podList.Items...)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported workload kind: %s", kind)
+	}
+
+	sort.Slice(pods, func(i, j int) bool { return pods[i].Name < pods[j].Name })
+	return pods, nil
 }
 
 func (c *Client) podsForSelector(ctx context.Context, ns string, selector *metav1.LabelSelector) ([]corev1.Pod, error) {
@@ -609,17 +637,25 @@ func podHasUnsafeLocalStorage(pod *corev1.Pod) bool {
 }
 
 func (c *Client) ListEvents(ctx context.Context, ns string, limit int) ([]EventInfo, error) {
+	return c.ListEventsByType(ctx, ns, limit, "")
+}
+
+func (c *Client) ListEventsByType(ctx context.Context, ns string, limit int, eventType string) ([]EventInfo, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	events, err := c.core.CoreV1().Events(ns).List(ctx, metav1.ListOptions{})
+	options := metav1.ListOptions{}
+	if eventType = strings.TrimSpace(eventType); eventType != "" {
+		options.FieldSelector = fields.OneTermEqualSelector("type", eventType).String()
+	}
+	events, err := c.core.CoreV1().Events(ns).List(ctx, options)
 	if err != nil {
 		return nil, err
 	}
 
 	items := events.Items
 	sort.Slice(items, func(i, j int) bool {
-		return items[i].LastTimestamp.Time.After(items[j].LastTimestamp.Time)
+		return kubernetesEventTime(items[i]).After(kubernetesEventTime(items[j]))
 	})
 	if len(items) > limit {
 		items = items[:limit]
@@ -628,10 +664,7 @@ func (c *Client) ListEvents(ctx context.Context, ns string, limit int) ([]EventI
 	out := make([]EventInfo, 0, len(items))
 	for _, e := range items {
 		obj := fmt.Sprintf("%s/%s", e.InvolvedObject.Kind, e.InvolvedObject.Name)
-		last := e.EventTime.Time
-		if last.IsZero() {
-			last = e.LastTimestamp.Time
-		}
+		last := kubernetesEventTime(e)
 		out = append(out, EventInfo{
 			Namespace: ns,
 			ObjectUID: e.InvolvedObject.UID,

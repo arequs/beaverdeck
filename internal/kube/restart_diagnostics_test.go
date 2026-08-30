@@ -106,6 +106,29 @@ func TestRestartMetricRingLookupAndPartialHistory(t *testing.T) {
 	}
 }
 
+func TestRestartMetricPointUsesMetricsAPITimestampObservedAfterIncident(t *testing.T) {
+	incidentAt := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	metricAt := incidentAt.Add(-10 * time.Second)
+	ring := newRestartMetricRing(5*time.Minute, 10*time.Second)
+	ring.add(restartMetricSample{
+		At:             incidentAt.Add(2 * time.Second),
+		Source:         "metrics-server",
+		Containers:     map[string]usageValues{"apps/pod/app": {cpuMilli: 40, memoryBytes: 4096}},
+		ContainerTimes: map[string]time.Time{"apps/pod/app": metricAt},
+		Pods: map[string]diagnosticPodMetric{
+			"apps/pod": {Namespace: "apps", Pod: "pod", Node: "node-a", SampledAt: metricAt, Usage: usageValues{cpuMilli: 40, memoryBytes: 4096}},
+		},
+	})
+	diagnostics := &RestartDiagnostics{ring: ring, opts: RestartDiagnosticsOptions{Interval: 10 * time.Second}}
+	point := diagnostics.metricPoint(metricAt, incidentAt, -10*time.Second, "apps/pod/app", "node-a", true)
+	if !point.Available || !point.SampledAt.Equal(metricAt) || point.CPUUsedMilli != 40 || point.MemoryBytes != 4096 {
+		t.Fatalf("expected delayed observation to retain the pre-incident metric timestamp, got %#v", point)
+	}
+	if _, ok := ring.closestPodSample(incidentAt, incidentAt, 20*time.Second, "apps/pod"); !ok {
+		t.Fatal("expected delayed pod observation to remain eligible for the incident node snapshot")
+	}
+}
+
 func TestRestartDiagnosticMetricOffsetsStartAtThreeMinutes(t *testing.T) {
 	want := []time.Duration{-3 * time.Minute, -time.Minute, -30 * time.Second, -10 * time.Second}
 	if len(restartDiagnosticOffsets) != len(want) {
@@ -127,6 +150,7 @@ func TestCollectRestartDiagnosticMetricsFromMetricsServer(t *testing.T) {
 		&unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "metrics.k8s.io/v1beta1", "kind": "Pod",
 			"metadata":   map[string]any{"namespace": "apps", "name": "api-1"},
+			"timestamp":  "2026-08-17T11:59:50Z",
 			"containers": []any{map[string]any{"name": "app", "usage": map[string]any{"cpu": "125m", "memory": "64Mi"}}},
 		}},
 		&unstructured.Unstructured{Object: map[string]any{
@@ -147,6 +171,9 @@ func TestCollectRestartDiagnosticMetricsFromMetricsServer(t *testing.T) {
 	}
 	if sample.Pods["apps/api-1"].Node != "node-a" || sample.Nodes["node-a"].cpuMilli != 2000 {
 		t.Fatalf("unexpected pod/node sample: %#v", sample)
+	}
+	if got := sample.ContainerTimes["apps/api-1/app"]; !got.Equal(time.Date(2026, 8, 17, 11, 59, 50, 0, time.UTC)) {
+		t.Fatalf("unexpected container metric timestamp: %s", got)
 	}
 }
 

@@ -166,6 +166,14 @@ func (s *Server) adminOIDCConfigUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminOIDCConfigTest(w http.ResponseWriter, r *http.Request) {
+	s.adminExternalOIDCConfigTest(w, r, false)
+}
+
+func (s *Server) adminEntraConfigTest(w http.ResponseWriter, r *http.Request) {
+	s.adminExternalOIDCConfigTest(w, r, true)
+}
+
+func (s *Server) adminExternalOIDCConfigTest(w http.ResponseWriter, r *http.Request, entra bool) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
@@ -174,8 +182,14 @@ func (s *Server) adminOIDCConfigTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+	providerName := "OpenID Connect"
+	redirectURI := oidcRedirectURI(r)
+	if entra {
+		providerName = "Azure Entra ID"
+		redirectURI = entraRedirectURI(r)
+	}
 	if strings.TrimSpace(req.IssuerURL) == "" || strings.TrimSpace(req.ClientID) == "" || strings.TrimSpace(req.ClientSecret) == "" {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("OpenID Connect issuer/client id/client secret are not configured"))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("%s issuer/client id/client secret are not configured", providerName))
 		return
 	}
 
@@ -187,19 +201,19 @@ func (s *Server) adminOIDCConfigTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := probeOAuthClientCredentials(ctx, discovery.TokenEndpoint, req.ClientID, req.ClientSecret, oidcRedirectURI(r)); err != nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("OpenID Connect client validation failed: %w", err))
+	if err := probeOAuthClientCredentials(ctx, discovery.TokenEndpoint, req.ClientID, req.ClientSecret, redirectURI); err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("%s client validation failed: %w", providerName, err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
-		"provider_name": providerLabel(req.ProviderName, "OpenID Connect"),
+		"provider_name": providerLabel(req.ProviderName, providerName),
 		"issuer_url":    strings.TrimSpace(req.IssuerURL),
-		"redirect_uri":  oidcRedirectURI(r),
+		"redirect_uri":  redirectURI,
 		"scopes":        oidcScopes(req.Scopes),
 		"userinfo_url":  discovery.UserInfoEndpoint,
-		"entra_graph":   isMicrosoftEntraConfig(req),
-		"message":       fmt.Sprintf("%s config is valid. Discovery succeeded for %s, token endpoint accepted the client credentials, and redirect URI is %s.", providerLabel(req.ProviderName, "OpenID Connect"), strings.TrimSpace(req.IssuerURL), oidcRedirectURI(r)),
+		"entra_graph":   entra,
+		"message":       fmt.Sprintf("%s config is valid. Discovery succeeded for %s, token endpoint accepted the client credentials, and redirect URI is %s.", providerLabel(req.ProviderName, providerName), strings.TrimSpace(req.IssuerURL), redirectURI),
 	})
 }
 
@@ -252,6 +266,93 @@ func (s *Server) adminOIDCMappingsDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.users.DeleteOIDCGroupRole(r.Context(), req.GroupName); err != nil {
+		if err == sql.ErrNoRows {
+			writeErr(w, http.StatusNotFound, err)
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminEntraConfigGet(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	cfg, err := s.users.GetEntraConfig(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *Server) adminEntraConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req users.OIDCConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.users.UpdateEntraConfig(r.Context(), req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminEntraReset(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if err := s.users.ResetEntraAuth(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminEntraMappingsList(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	items, err := s.users.ListEntraGroupRoles(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) adminEntraMappingsUpsert(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req oidcMappingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.users.UpsertEntraGroupRole(r.Context(), req.GroupName, users.Role(req.Role)); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminEntraMappingsDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req oidcMappingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.users.DeleteEntraGroupRole(r.Context(), req.GroupName); err != nil {
 		if err == sql.ErrNoRows {
 			writeErr(w, http.StatusNotFound, err)
 			return

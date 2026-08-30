@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Boxes, Check, ChevronDown, ChevronRight, RefreshCw, UserRound } from 'lucide-react';
+import { Boxes, Check, ChevronDown, ChevronRight, LayoutDashboard, RefreshCw, UserRound } from 'lucide-react';
 import { withBasePath } from '../lib/paths.js';
 import { GoogleIcon, OAuthIcon } from './AuthIcons.jsx';
 import PasswordField from './PasswordField.jsx';
@@ -15,6 +15,7 @@ export function LoginScreen({
   authProviders,
   startGoogleLogin,
   startOIDCLogin,
+  startEntraLogin,
   authError,
   showInputs = true,
   appVersion = ''
@@ -59,6 +60,12 @@ export function LoginScreen({
                 <button className="secondary google-login-button" onClick={startOIDCLogin}>
                   <span className="oauth-icon-wrap"><OAuthIcon /></span>
                   Sign in with {authProviders.oidc?.provider_name || 'OpenID Connect'}{authProviders.oidc?.hosted_domain ? ` (${authProviders.oidc.hosted_domain})` : ''}
+                </button>
+              ) : null}
+              {authProviders.entra?.enabled ? (
+                <button className="secondary google-login-button" onClick={startEntraLogin}>
+                  <span className="oauth-icon-wrap"><OAuthIcon /></span>
+                  Sign in with {authProviders.entra?.provider_name || 'Azure Entra ID'}{authProviders.entra?.hosted_domain ? ` (${authProviders.entra.hosted_domain})` : ''}
                 </button>
               ) : null}
               {authError ? <div className="error-text">{authError}</div> : null}
@@ -200,6 +207,20 @@ export function SidebarNav({
 
       <div className="nav-section-title">Navigation</div>
       {visibleMenu.map((group) => {
+        if (group.standalone) {
+          return group.items.map((item) => (
+            <div key={item.id} className="menu-primary">
+              <button
+                type="button"
+                className={`nav-item nav-primary ${activeNav === item.id ? 'active' : ''}`}
+                onClick={() => handleNavChange(item.id)}
+              >
+                <LayoutDashboard size={14} strokeWidth={1.8} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            </div>
+          ));
+        }
         const expanded = expandedNavSections?.has(group.section);
         return (
           <div key={group.section} className={`menu-group ${expanded ? 'expanded' : 'collapsed'}`}>

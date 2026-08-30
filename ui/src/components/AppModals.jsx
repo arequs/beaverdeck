@@ -192,6 +192,7 @@ export function OIDCMappingsModal({
   open,
   onClose,
   providerName,
+  mode = 'oidc',
   mappings,
   groupName,
   role,
@@ -205,7 +206,7 @@ export function OIDCMappingsModal({
   onDelete
 }) {
   if (!open) return null;
-  const isEntra = /entra|azure/i.test(providerName || '');
+  const isEntra = mode === 'entra';
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card google-auth-modal" onClick={(e) => e.stopPropagation()}>
@@ -253,7 +254,7 @@ export function OIDCMappingsModal({
               ))}
               {mappings.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="small-hint">No OIDC group mappings configured.</td>
+                  <td colSpan="4" className="small-hint">No {isEntra ? 'Azure Entra ID' : 'OIDC'} group mappings configured.</td>
                 </tr>
               ) : null}
             </tbody>

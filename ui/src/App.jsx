@@ -18,7 +18,7 @@ import ApplyYamlPage from './components/ApplyYamlPage.jsx';
 import ArgoCDApplicationsPage from './components/ArgoCDApplicationsPage.jsx';
 import BottomDock from './components/BottomDock.jsx';
 import { BootstrapSetupScreen, LoginScreen, SidebarNav, WorkspaceHeader } from './components/AppChrome.jsx';
-import ClusterHealthPage from './components/ClusterHealthPage.jsx';
+import DashboardPage from './components/DashboardPage.jsx';
 import HelmReleasesPage from './components/HelmReleasesPage.jsx';
 import InsightsPage from './components/InsightsPage.jsx';
 import NodesPage from './components/NodesPage.jsx';
@@ -77,8 +77,11 @@ import {
 } from './lib/appUtils.js';
 import { withBasePath } from './lib/paths.js';
 
-const ACTIVE_NAV_STORAGE_KEY = 'beaverdeck.activeNav';
 const DEFAULT_EXPANDED_NAV_SECTIONS = new Set();
+const MAX_FOLLOW_LOG_CHARACTERS = 4 * 1024 * 1024;
+const MAX_FOLLOW_LOG_LINES = 5000;
+const MAX_LOG_STREAM_FRAME_CHARACTERS = 8 * 1024 * 1024;
+const FOLLOW_LOG_TRIM_MARKER = '[older streamed log output discarded by BeaverDeck]';
 
 function groupCRDsForNavigation(crds) {
   const groups = new Map();
@@ -120,10 +123,6 @@ const DEFAULT_ENTRA_CONFIG = {
   groups_claim: 'groups'
 };
 
-function isEntraOIDCConfig(config) {
-  return /entra|azure|microsoftonline\.com|sts\.windows\.net/i.test(`${config?.provider_name || ''} ${config?.issuer_url || ''}`);
-}
-
 function normalizeOIDCConfig(config, fallback = DEFAULT_OIDC_CONFIG) {
   return {
     provider_name: config?.provider_name || fallback.provider_name,
@@ -137,17 +136,9 @@ function normalizeOIDCConfig(config, fallback = DEFAULT_OIDC_CONFIG) {
   };
 }
 
-function loadPersistedActiveNav() {
-  try {
-    const value = window.localStorage.getItem(ACTIVE_NAV_STORAGE_KEY);
-    return value === 'insights' ? 'insights-nodes' : (value || 'pods');
-  } catch {
-    return 'pods';
-  }
-}
-
 function navSectionForId(menu, navId) {
-  return menu.find((group) => group.items.some((item) => item.id === navId))?.section || '';
+  const group = menu.find((item) => item.items.some((navItem) => navItem.id === navId));
+  return group?.standalone ? '' : (group?.section || '');
 }
 
 function bottomTabResourceKey(namespace, kind, name) {
@@ -165,6 +156,47 @@ function normalizeContainerNames(containers) {
   return Array.from(new Set(containers.map((item) => String(item || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
+function trimFollowLogContent(content) {
+  let start = Math.max(0, content.length - MAX_FOLLOW_LOG_CHARACTERS);
+  if (start > 0) {
+    const nextLine = content.indexOf('\n', start);
+    start = nextLine === -1 ? start : nextLine + 1;
+  }
+  let cursor = content.length;
+  let lineCount = 1;
+  while (cursor > start && lineCount <= MAX_FOLLOW_LOG_LINES) {
+    const previousLine = content.lastIndexOf('\n', cursor - 1);
+    if (previousLine < start) break;
+    cursor = previousLine;
+    lineCount += 1;
+  }
+  if (lineCount > MAX_FOLLOW_LOG_LINES) {
+    start = Math.max(start, cursor + 1);
+  }
+  if (start <= 0) return content;
+  return `${FOLLOW_LOG_TRIM_MARKER}\n${content.slice(start)}`;
+}
+
+function mergeLogText(base, addition) {
+  if (!base) return addition || '';
+  if (!addition) return base;
+  return `${base}${base.endsWith('\n') ? '' : '\n'}${addition}`;
+}
+
+function parseSSEFrame(frame) {
+  let event = 'message';
+  const data = [];
+  frame.split('\n').forEach((line) => {
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith('data:')) {
+      data.push(line.slice(5).trimStart());
+    }
+  });
+  if (data.length === 0) return null;
+  return { event, payload: JSON.parse(data.join('\n')) };
+}
+
 function podRefKey(namespace, name) {
   return `${String(namespace || '').trim()}/${String(name || '').trim()}`;
 }
@@ -174,7 +206,7 @@ export default function App() {
   const [bottomNotice, setBottomNotice] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
-  const [activeNav, setActiveNav] = useState(loadPersistedActiveNav);
+  const [activeNav, setActiveNav] = useState('dashboard');
   const [expandedNavSections, setExpandedNavSections] = useState(() => new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
   const [loadedNavs, setLoadedNavs] = useState({});
   const [initialNavLoading, setInitialNavLoading] = useState('');
@@ -217,6 +249,8 @@ export default function App() {
   const [pvs, setPVs] = useState([]);
   const [storageClasses, setStorageClasses] = useState([]);
   const [insights, setInsights] = useState([]);
+  const [dashboardInsights, setDashboardInsights] = useState([]);
+  const [dashboardLoading, setDashboardLoading] = useState({});
   const [showSuppressedInsights, setShowSuppressedInsights] = useState(false);
   const [showAllInsightChecks, setShowAllInsightChecks] = useState(false);
   const [selectedInsightTypes, setSelectedInsightTypes] = useState([]);
@@ -244,6 +278,8 @@ export default function App() {
   });
   const [oidcConfigDraft, setOIDCConfigDraft] = useState(DEFAULT_OIDC_CONFIG);
   const [oidcMappings, setOIDCMappings] = useState([]);
+  const [entraConfig, setEntraConfig] = useState(DEFAULT_ENTRA_CONFIG);
+  const [entraMappings, setEntraMappings] = useState([]);
   const [newGoogleGroupEmail, setNewGoogleGroupEmail] = useState('');
   const [newGoogleRole, setNewGoogleRole] = useState('viewer');
   const [editingGoogleGroupEmail, setEditingGoogleGroupEmail] = useState('');
@@ -260,6 +296,7 @@ export default function App() {
   const [showOIDCConfigModal, setShowOIDCConfigModal] = useState(false);
   const [oidcConfigModalMode, setOIDCConfigModalMode] = useState('oidc');
   const [showOIDCMappingsModal, setShowOIDCMappingsModal] = useState(false);
+  const [oidcMappingsModalMode, setOIDCMappingsModalMode] = useState('oidc');
   const [editingRoleName, setEditingRoleName] = useState('');
   const [roleFormName, setRoleFormName] = useState('');
   const [roleFormMode, setRoleFormMode] = useState('viewer');
@@ -317,8 +354,9 @@ export default function App() {
   const workspaceMainRef = useRef(null);
   const dockResizeStateRef = useRef(null);
   const podsAutoRefreshBusyRef = useRef(false);
+  const dashboardRequestRef = useRef(0);
   const warningHideTimerRef = useRef(null);
-  const logFollowRef = useRef(null);
+  const logStreamAbortRef = useRef(null);
   const logsOutputRef = useRef(null);
   const logsEndRef = useRef(null);
   const forceLogScrollRef = useRef(false);
@@ -351,13 +389,16 @@ export default function App() {
     logout,
     reloadAuthProviders,
     startGoogleLogin,
-    startOIDCLogin
+    startOIDCLogin,
+    startEntraLogin
   } = useAuthSession({
     selectedNamespaces,
     setNamespaces,
     setSelectedNamespaces,
     setThemePreference,
     beforeLogout: async () => {
+      logStreamAbortRef.current?.abort();
+      logStreamAbortRef.current = null;
       Object.keys(execSocketsRef.current).forEach((id) => {
         try {
           execSocketsRef.current[id]?.close();
@@ -374,7 +415,7 @@ export default function App() {
     afterLogout: () => {
       setStatus('');
       setShowProfile(false);
-      setActiveNav('pods');
+      setActiveNav('dashboard');
       setExpandedNavSections(new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
       setLoadedNavs({});
       setInitialNavLoading('');
@@ -411,6 +452,9 @@ export default function App() {
       setPVs([]);
       setStorageClasses([]);
       setInsights([]);
+      setDashboardInsights([]);
+      setDashboardLoading({});
+      dashboardRequestRef.current += 1;
       setShowSuppressedInsights(false);
       setManagedUsers([]);
       setManagedRoles([]);
@@ -427,6 +471,8 @@ export default function App() {
       });
       setOIDCConfigDraft({ ...DEFAULT_OIDC_CONFIG });
       setOIDCMappings([]);
+      setEntraConfig({ ...DEFAULT_ENTRA_CONFIG });
+      setEntraMappings([]);
       setShowGoogleConfigModal(false);
       setShowGoogleMappingsModal(false);
       setShowOIDCConfigModal(false);
@@ -465,6 +511,35 @@ export default function App() {
     return { allowed: true, reason: '' };
   };
   const hasPermission = (resource, action, namespace) => permissionInfo(resource, action, namespace).allowed;
+  const dashboardAccess = useMemo(() => {
+    const canView = (resource) => isAdmin || Boolean(userPermissions.resources?.[resource]?.view);
+    return {
+      nodes: canView('nodes'),
+      pods: canView('pods'),
+      workloads: canView('workloads'),
+      events: canView('events'),
+      services: canView('services'),
+      ingresses: canView('ingresses'),
+      pvcs: canView('pvcs'),
+      pvs: canView('pvs'),
+      storageclasses: canView('storageclasses'),
+      insights: canView('insights'),
+      secrets: canView('secrets'),
+      configmaps: canView('configmaps')
+    };
+  }, [isAdmin, userPermissions]);
+  const dashboardInsightCategories = useMemo(() => {
+    if (!dashboardAccess.insights) return [];
+    const categories = [];
+    if (dashboardAccess.nodes && dashboardAccess.pods) categories.push('nodes');
+    if (dashboardAccess.workloads && dashboardAccess.pods && dashboardAccess.events) categories.push('workloads');
+    if (dashboardAccess.nodes && dashboardAccess.pods && dashboardAccess.events) categories.push('gpu');
+    if (dashboardAccess.services && dashboardAccess.ingresses && dashboardAccess.workloads && dashboardAccess.secrets) categories.push('networking');
+    if (dashboardAccess.nodes && dashboardAccess.pvcs && dashboardAccess.pvs) categories.push('storage');
+    if (dashboardAccess.pods) categories.push('security');
+    if (dashboardAccess.pods && dashboardAccess.secrets && dashboardAccess.configmaps) categories.push('configuration');
+    return categories;
+  }, [dashboardAccess]);
   const allAllowed = (...checks) => {
     for (const c of checks) {
       if (!c?.allowed) return c;
@@ -473,7 +548,8 @@ export default function App() {
   };
   const makeAction = (label, check, onClick) => ({ label, enabled: check.allowed, reason: check.reason, onClick });
   const canAccessNav = (id) => {
-    if (id === 'user-management' || id === 'cluster-health') return isAdmin;
+    if (id === 'dashboard') return true;
+    if (id === 'user-management') return isAdmin;
     const resource = NAV_RESOURCE[id];
     if (!resource) return true;
     const action = id === 'apply' ? 'edit' : 'view';
@@ -554,7 +630,7 @@ export default function App() {
   const activeInsightCategory = INSIGHT_NAV_CATEGORIES[activeNav]?.value || 'nodes';
   const activeInsightCategoryLabel = INSIGHT_NAV_CATEGORIES[activeNav]?.label || 'Nodes';
   const isInsightsView = Boolean(INSIGHT_NAV_CATEGORIES[activeNav]);
-  const showInitialNavLoader = initialNavLoading === activeNav && !loadedNavs[activeNav];
+  const showInitialNavLoader = activeNav !== 'dashboard' && initialNavLoading === activeNav && !loadedNavs[activeNav];
   const hasBottomDock = bottomTabs.length > 0;
   const showBottomDock = hasBottomDock && !BOTTOM_DOCK_HIDDEN_NAVS.has(activeNav);
   const isPodsView = activeNav === 'pods';
@@ -568,6 +644,11 @@ export default function App() {
     oidcConfig.issuer_url.trim() &&
     oidcConfig.client_id.trim() &&
     oidcConfig.client_secret.trim()
+  );
+  const entraAuthConfigured = Boolean(
+    entraConfig.issuer_url.trim() &&
+    entraConfig.client_id.trim() &&
+    entraConfig.client_secret.trim()
   );
 
   const podNameRegex = podSearch.trim();
@@ -634,6 +715,13 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (activeNav !== 'dashboard') {
+      dashboardRequestRef.current += 1;
+      setDashboardLoading({});
+    }
+  }, [activeNav]);
+
+  useEffect(() => {
     if (!isLoggedIn || !api) return;
     const targetNav = activeNav;
     const firstLoad = !loadedNavs[targetNav];
@@ -671,7 +759,7 @@ export default function App() {
 
   useEffect(() => {
     if (!visibleNavItems.find((x) => x.id === activeNav)) {
-      activateNav(visibleNavItems[0]?.id || 'pods');
+      activateNav(visibleNavItems[0]?.id || 'dashboard');
     }
   }, [visibleNavItems, activeNav, activateNav]);
 
@@ -688,10 +776,8 @@ export default function App() {
       execTerminalRef.current.dispose();
       execTerminalRef.current = null;
     }
-    if (logFollowRef.current) {
-      clearInterval(logFollowRef.current);
-      logFollowRef.current = null;
-    }
+    logStreamAbortRef.current?.abort();
+    logStreamAbortRef.current = null;
     if (warningHideTimerRef.current) {
       clearTimeout(warningHideTimerRef.current);
       warningHideTimerRef.current = null;
@@ -736,14 +822,6 @@ export default function App() {
     if (!isLoggedIn || !username) return;
     persistThemePreference(username, themePreference);
   }, [isLoggedIn, username, themePreference]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(ACTIVE_NAV_STORAGE_KEY, activeNav);
-    } catch {
-      // ignore storage errors
-    }
-  }, [activeNav]);
 
   useEffect(() => {
     if (!activeBottomTab || activeBottomTab.type !== 'exec' || !execTerminalHostRef.current) {
@@ -885,25 +963,25 @@ export default function App() {
   }, [showBottomDock]);
 
   useEffect(() => {
-    if (logFollowRef.current) {
-      clearInterval(logFollowRef.current);
-      logFollowRef.current = null;
-    }
-    if (!activeBottomTab || activeBottomTab.type !== 'logs' || !activeBottomTab.follow) {
+    logStreamAbortRef.current?.abort();
+    logStreamAbortRef.current = null;
+    if (!api || !showBottomDock || !activeBottomTab || activeBottomTab.type !== 'logs' || activeBottomTab.streamActive === false) {
       return undefined;
     }
-    const poll = () => {
-      void refreshLogTab(activeBottomTab.id, true);
-    };
-    poll();
-    logFollowRef.current = window.setInterval(poll, 2500);
+
+    const controller = new AbortController();
+    logStreamAbortRef.current = controller;
+    void followLogTab(activeBottomTab, controller.signal);
     return () => {
-      if (logFollowRef.current) {
-        clearInterval(logFollowRef.current);
-        logFollowRef.current = null;
+      controller.abort();
+      if (logStreamAbortRef.current === controller) {
+        logStreamAbortRef.current = null;
       }
     };
-  }, [activeBottomTab?.id, activeBottomTab?.type, activeBottomTab?.follow]);
+    // The stream is intentionally tied only to connection-defining fields;
+    // content updates must not reconnect it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, showBottomDock, activeBottomTab?.id, activeBottomTab?.type, activeBottomTab?.streamActive, activeBottomTab?.streamNonce, activeBottomTab?.container]);
 
   useEffect(() => {
     const shouldScroll = Boolean(activeBottomTab?.follow) || (forceLogScrollRef.current && !activeBottomTab?.loading);
@@ -1031,15 +1109,39 @@ export default function App() {
   ), [filteredInsightBase, showAllInsightChecks, showSuppressedInsights]);
   const sortedInsights = useMemo(() => getSorted('insights', visibleInsights), [visibleInsights, sortByNav]);
   const groupedInsights = useMemo(() => {
-    const groups = sortedInsights.reduce((acc, alert) => {
-      const key = alert.check_label || alert.category || 'Other';
-      if (!acc[key]) {
-        acc[key] = { label: alert.check_label || alert.category || 'Other', category: alert.category || 'Other', items: [] };
+    const severityRank = { ok: 0, warning: 1, critical: 2 };
+    const groups = new Map();
+    sortedInsights.forEach((alert) => {
+      const key = alert.check_type || alert.check_label || alert.category || 'other';
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          checkType: alert.check_type || '',
+          label: alert.check_label || alert.category || 'Other',
+          category: alert.category || 'Other',
+          severity: 'ok',
+          alertCount: 0,
+          passingCount: 0,
+          suppressedCount: 0,
+          items: []
+        });
       }
-      acc[key].items.push(alert);
-      return acc;
-    }, {});
-    return Object.values(groups);
+      const group = groups.get(key);
+      group.items.push(alert);
+      if (alert.status === 'alert') {
+        group.alertCount += 1;
+      } else {
+        group.passingCount += 1;
+      }
+      if (alert.suppressed) {
+        group.suppressedCount += 1;
+      }
+      const severity = String(alert.severity || 'warning').toLowerCase();
+      if ((severityRank[severity] ?? 1) > (severityRank[group.severity] ?? 0)) {
+        group.severity = severity;
+      }
+    });
+    return Array.from(groups.values());
   }, [sortedInsights]);
 
   function isDegradedReady(ready) {
@@ -1587,51 +1689,71 @@ export default function App() {
         if (!isAdmin) return;
         await refreshUsers();
       },
-      'cluster-health': async () => {
-        if (selectedNamespaces.length === 0) {
-          setWorkloads([]);
-          setPods([]);
-          setHealthPods([]);
-          setNodes([]);
-          setEvents([]);
-          setIngresses([]);
-          setServices([]);
-          setPVCs([]);
-          setPVs([]);
-          setStorageClasses([]);
-          return;
-        }
-        const [
-          workloadData,
-          healthPodData,
-          nodeData,
-          eventData,
-          ingressData,
-          serviceData,
-          pvcData,
-          pvData,
-          storageClassData
-        ] = await Promise.all([
-          api(`/api/workloads?namespace=${encodeURIComponent(namespaceQuery)}`),
-          api(`/api/pods?namespace=${encodeURIComponent(namespaceQuery)}&include_metrics=1`),
-          api('/api/nodes'),
-          api(`/api/events?namespace=${encodeURIComponent(namespaceQuery)}&limit=200`),
-          api(`/api/ingresses?namespace=${encodeURIComponent(namespaceQuery)}`),
-          api(`/api/services?namespace=${encodeURIComponent(namespaceQuery)}`),
-          api(`/api/pvcs?namespace=${encodeURIComponent(namespaceQuery)}`),
-          api('/api/pvs'),
-          api('/api/storageclasses')
-        ]);
-        setWorkloads(workloadData.items || []);
-        setPods(healthPodData.items || []);
-        setHealthPods(healthPodData.items || []);
-        setNodes(nodeData.items || []);
-        setEvents(eventData.items || []);
-        setIngresses(ingressData.items || []);
-        setServices(serviceData.items || []);
-        setPVCs(pvcData.items || []);
-        setPVs(pvData.items || []);
-        setStorageClasses(storageClassData.items || []);
+      dashboard: async () => {
+        const hasNamespaces = selectedNamespaces.length > 0;
+        const insightCategories = hasNamespaces ? dashboardInsightCategories : [];
+        const requestID = dashboardRequestRef.current + 1;
+        dashboardRequestRef.current = requestID;
+        const enabled = {
+          workloads: dashboardAccess.workloads && hasNamespaces,
+          pods: dashboardAccess.pods && hasNamespaces,
+          nodes: dashboardAccess.nodes,
+          events: dashboardAccess.events && hasNamespaces,
+          ingresses: dashboardAccess.ingresses && hasNamespaces,
+          services: dashboardAccess.services && hasNamespaces,
+          pvcs: dashboardAccess.pvcs && hasNamespaces,
+          pvs: dashboardAccess.pvs,
+          storageclasses: dashboardAccess.storageclasses,
+          insights: insightCategories.length > 0
+        };
+
+        setWorkloads([]);
+        setHealthPods([]);
+        setNodes([]);
+        setEvents([]);
+        setIngresses([]);
+        setServices([]);
+        setPVCs([]);
+        setPVs([]);
+        setStorageClasses([]);
+        setDashboardInsights([]);
+        setDashboardLoading(enabled);
+
+        const load = (key, path, apply) => {
+          if (!enabled[key]) return Promise.resolve();
+          return api(path)
+            .then((data) => {
+              if (dashboardRequestRef.current === requestID) {
+                apply(data.items || []);
+              }
+            })
+            .finally(() => {
+              if (dashboardRequestRef.current === requestID) {
+                setDashboardLoading((current) => ({ ...current, [key]: false }));
+              }
+            });
+        };
+
+        const insightParams = new URLSearchParams({
+          namespace: namespaceQuery,
+          category: insightCategories.join(',')
+        });
+        const tasks = [
+          load('workloads', `/api/workloads?namespace=${encodeURIComponent(namespaceQuery)}`, setWorkloads),
+          load('pods', `/api/pods?namespace=${encodeURIComponent(namespaceQuery)}&include_metrics=1`, setHealthPods),
+          load('nodes', '/api/nodes', setNodes),
+          load('events', `/api/events?namespace=${encodeURIComponent(namespaceQuery)}&limit=30&type=Warning`, setEvents),
+          load('ingresses', `/api/ingresses?namespace=${encodeURIComponent(namespaceQuery)}`, setIngresses),
+          load('services', `/api/services?namespace=${encodeURIComponent(namespaceQuery)}`, setServices),
+          load('pvcs', `/api/pvcs?namespace=${encodeURIComponent(namespaceQuery)}&include_metrics=0`, setPVCs),
+          load('pvs', '/api/pvs?include_metrics=0', setPVs),
+          load('storageclasses', '/api/storageclasses', setStorageClasses),
+          load('insights', `/api/insights?${insightParams.toString()}`, setDashboardInsights)
+        ];
+        const results = await Promise.allSettled(tasks);
+        if (dashboardRequestRef.current !== requestID) return;
+        const failure = results.find((result) => result.status === 'rejected');
+        if (failure) throw failure.reason;
       },
       apply: async () => {}
     };
@@ -1777,9 +1899,9 @@ export default function App() {
       execTerminalRef.current.dispose();
       execTerminalRef.current = null;
     }
-    if (activeBottomTabId === tabId && logFollowRef.current) {
-      clearInterval(logFollowRef.current);
-      logFollowRef.current = null;
+    if (activeBottomTabId === tabId && logStreamAbortRef.current) {
+      logStreamAbortRef.current.abort();
+      logStreamAbortRef.current = null;
     }
     setBottomTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
@@ -1842,7 +1964,7 @@ export default function App() {
       prevHeight: wrap.scrollHeight,
       prevTop: wrap.scrollTop
     };
-    const nextTab = { ...tab, tail: nextTail, follow: false, loadingOlder: true, error: '' };
+    const nextTab = { ...tab, tail: nextTail, follow: false, loadingOlder: true, liveDuringHistoryLoad: '', error: '' };
     upsertTab(nextTab, false);
     await refreshLogTab(tabId, true, {
       preserveScrollPosition: true,
@@ -2056,7 +2178,198 @@ export default function App() {
     }
   }
 
-  async function openPodLogsTab(namespace, podName, container = '', containers = []) {
+  function updateLogStreamTab(tabId, streamNonce, patch) {
+    setBottomTabs((prev) => prev.map((tab) => (
+      tab.id === tabId && Number(tab.streamNonce || 0) === Number(streamNonce || 0)
+        ? { ...tab, ...patch }
+        : tab
+    )));
+  }
+
+  function appendFollowLogLines(tabId, streamNonce, lines) {
+    if (lines.length === 0) return;
+    const addition = `${lines.join('\n')}\n`;
+    setBottomTabs((prev) => prev.map((tab) => {
+      if (tab.id !== tabId || Number(tab.streamNonce || 0) !== Number(streamNonce || 0)) {
+        return tab;
+      }
+      return {
+        ...tab,
+        content: trimFollowLogContent(`${tab.content || ''}${addition}`),
+        liveDuringHistoryLoad: tab.loadingOlder
+          ? trimFollowLogContent(`${tab.liveDuringHistoryLoad || ''}${addition}`)
+          : tab.liveDuringHistoryLoad
+      };
+    }));
+  }
+
+  async function followLogTab(tab, signal) {
+    const streamNonce = Number(tab.streamNonce || 0);
+    const params = new URLSearchParams({
+      namespace: tab.namespace,
+      follow: 'true',
+      tail: String((tab.content || tab.streamStarted) ? 0 : (tab.tail || (tab.logKind === 'pod' ? 400 : 300)))
+    });
+    let endpoint = '/api/workloadlogs';
+    if (tab.logKind === 'pod') {
+      endpoint = '/api/podlogs';
+      params.set('pod', tab.pod);
+      if (tab.container) {
+        params.set('container', tab.container);
+      }
+    } else {
+      params.set('kind', tab.kind);
+      params.set('name', tab.name);
+    }
+
+    updateLogStreamTab(tab.id, streamNonce, {
+      loading: !tab.content,
+      error: '',
+      streamConnected: false,
+      streamError: ''
+    });
+
+    let reader;
+    let receivedEnd = false;
+    let streamErrorMessage = '';
+    let pendingLines = [];
+    let flushTimer = null;
+    const flushPendingLines = () => {
+      if (flushTimer !== null) {
+        window.clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (pendingLines.length === 0) return;
+      const lines = pendingLines;
+      pendingLines = [];
+      appendFollowLogLines(tab.id, streamNonce, lines);
+    };
+    const enqueueLines = (lines) => {
+      if (lines.length === 0) return;
+      pendingLines.push(...lines);
+      if (pendingLines.length >= 100) {
+        flushPendingLines();
+      } else if (flushTimer === null) {
+        flushTimer = window.setTimeout(flushPendingLines, 50);
+      }
+    };
+    try {
+      const body = await api.stream(`${endpoint}?${params.toString()}`, { signal });
+      if (signal.aborted) return;
+      updateLogStreamTab(tab.id, streamNonce, {
+        loading: false,
+        streamConnected: true,
+        streamStarted: true,
+        streamError: ''
+      });
+      reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (!signal.aborted) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        if (buffer.length > MAX_LOG_STREAM_FRAME_CHARACTERS && !buffer.includes('\n\n')) {
+          throw new Error('Log stream frame exceeds the BeaverDeck safety limit');
+        }
+        const lines = [];
+        let separatorIndex = buffer.indexOf('\n\n');
+        while (separatorIndex !== -1) {
+          const frame = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + 2);
+          const parsed = parseSSEFrame(frame);
+          if (parsed?.event === 'log') {
+            let line = String(parsed.payload?.line ?? '');
+            if (tab.logKind === 'workload' && parsed.payload?.source) {
+              line = `[${parsed.payload.source}] ${line}`;
+            }
+            if (parsed.payload?.truncated) {
+              line += ' … [line truncated by BeaverDeck after 1 MiB]';
+            }
+            lines.push(line);
+          } else if (parsed?.event === 'error') {
+            const source = parsed.payload?.source ? `[${parsed.payload.source}] ` : '';
+            const message = String(parsed.payload?.error || 'Log stream failed');
+            lines.push(`${source}[stream error] ${message}`);
+            streamErrorMessage = message;
+            updateLogStreamTab(tab.id, streamNonce, { streamError: message });
+          } else if (parsed?.event === 'end') {
+            receivedEnd = true;
+          }
+          separatorIndex = buffer.indexOf('\n\n');
+        }
+        enqueueLines(lines);
+        if (done || receivedEnd) break;
+      }
+
+      if (!signal.aborted) {
+        flushPendingLines();
+        updateLogStreamTab(tab.id, streamNonce, {
+          loading: false,
+          follow: false,
+          streamActive: false,
+          streamConnected: false,
+          streamError: streamErrorMessage || (receivedEnd ? 'Log stream ended' : 'Log stream disconnected')
+        });
+      }
+    } catch (err) {
+      if (!signal.aborted && err?.name !== 'AbortError') {
+        updateLogStreamTab(tab.id, streamNonce, {
+          loading: false,
+          follow: false,
+          streamActive: false,
+          streamConnected: false,
+          streamError: err.message || String(err)
+        });
+      }
+    } finally {
+      flushPendingLines();
+      try {
+        reader?.releaseLock();
+      } catch {
+        // Ignore a reader already released by the browser after cancellation.
+      }
+    }
+  }
+
+  function setLogFollow(tabId, enabled) {
+    if (enabled) {
+      scheduleLogsScrollToBottom();
+    }
+    setBottomTabs((prev) => prev.map((tab) => {
+      if (tab.id !== tabId || tab.type !== 'logs') return tab;
+      const restartStream = enabled && tab.streamActive === false;
+      return {
+        ...tab,
+        follow: enabled,
+        loading: restartStream ? !tab.content : tab.loading,
+        streamActive: restartStream ? true : tab.streamActive,
+        streamConnected: restartStream ? false : tab.streamConnected,
+        streamError: restartStream ? '' : tab.streamError,
+        streamStarted: Boolean(tab.content || tab.streamStarted),
+        streamNonce: restartStream ? Number(tab.streamNonce || 0) + 1 : tab.streamNonce
+      };
+    }));
+  }
+
+  function refreshLogAction(tabId) {
+    const tab = bottomTabsRef.current.find((item) => item.id === tabId);
+    if (!tab || tab.type !== 'logs') return;
+    if (tab.follow) scheduleLogsScrollToBottom();
+    upsertTab({
+      id: tabId,
+      content: '',
+      loading: true,
+      error: '',
+      streamActive: true,
+      streamConnected: false,
+      streamError: '',
+      streamStarted: false,
+      streamNonce: Number(tab.streamNonce || 0) + 1
+    }, false);
+  }
+
+  function openPodLogsTab(namespace, podName, container = '', containers = []) {
     const knownPod = pods.find((item) => item.namespace === namespace && item.name === podName);
     const containerOptions = normalizeContainerNames(
       Array.isArray(containers) && containers.length > 0 ? containers : knownPod?.containers
@@ -2064,6 +2377,7 @@ export default function App() {
     const selectedContainer = String(container || containerOptions[0] || '').trim();
     const id = `logs:pod:${namespace}:${podName}`;
     const title = `Logs Pod/${podName}`;
+    const existing = bottomTabsRef.current.find((item) => item.id === id);
     const tab = {
       id,
       type: 'logs',
@@ -2073,6 +2387,11 @@ export default function App() {
       loading: true,
       error: '',
       follow: true,
+      streamActive: true,
+      streamNonce: Number(existing?.streamNonce || 0) + 1,
+      streamStarted: false,
+      streamConnected: false,
+      streamError: '',
       search: '',
       showWarnings: false,
       showErrors: false,
@@ -2085,12 +2404,13 @@ export default function App() {
       loadingOlder: false
     };
     upsertTab(tab);
-    await refreshLogTab(id, false, { forceScrollToBottom: true, tabOverride: tab });
+    scheduleLogsScrollToBottom();
   }
 
-  async function openWorkloadLogsTab(namespace, kind, name) {
+  function openWorkloadLogsTab(namespace, kind, name) {
     const id = `logs:workload:${namespace}:${kind}:${name}`;
     const title = `Logs ${displayKind(kind)}/${name}`;
+    const existing = bottomTabsRef.current.find((item) => item.id === id);
     const tab = {
       id,
       type: 'logs',
@@ -2100,6 +2420,11 @@ export default function App() {
       loading: true,
       error: '',
       follow: true,
+      streamActive: true,
+      streamNonce: Number(existing?.streamNonce || 0) + 1,
+      streamStarted: false,
+      streamConnected: false,
+      streamError: '',
       search: '',
       showWarnings: false,
       showErrors: false,
@@ -2111,7 +2436,7 @@ export default function App() {
       loadingOlder: false
     };
     upsertTab(tab);
-    await refreshLogTab(id, false, { forceScrollToBottom: true, tabOverride: tab });
+    scheduleLogsScrollToBottom();
   }
 
   async function refreshLogTab(tabId, silent = false, options = {}) {
@@ -2155,21 +2480,37 @@ export default function App() {
       if (tab.follow) {
         scheduleLogsScrollToBottom();
       }
-      upsertTab({
-        id: tabId,
-        content: text,
-        loading: false,
-        loadingOlder: false,
-        canLoadOlder: preserveScrollPosition ? text !== previousContent : tab.canLoadOlder,
-        error: ''
-      }, false);
+      if (preserveScrollPosition) {
+        setBottomTabs((prev) => prev.map((current) => (
+          current.id === tabId
+            ? {
+              ...current,
+              content: trimFollowLogContent(mergeLogText(text, current.liveDuringHistoryLoad)),
+              liveDuringHistoryLoad: '',
+              loading: false,
+              loadingOlder: false,
+              canLoadOlder: text !== previousContent,
+              error: ''
+            }
+            : current
+        )));
+      } else {
+        upsertTab({
+          id: tabId,
+          content: text,
+          loading: false,
+          loadingOlder: false,
+          canLoadOlder: tab.canLoadOlder,
+          error: ''
+        }, false);
+      }
     } catch (err) {
       pendingLogPrependRef.current = null;
-      upsertTab({ id: tabId, loading: false, loadingOlder: false, error: err.message || String(err) }, false);
+      upsertTab({ id: tabId, loading: false, loadingOlder: false, liveDuringHistoryLoad: '', error: err.message || String(err) }, false);
     }
   }
 
-  async function changeLogContainer(tabId, container) {
+  function changeLogContainer(tabId, container) {
     const tab = bottomTabsRef.current.find((item) => item.id === tabId);
     if (!tab || tab.type !== 'logs' || tab.logKind !== 'pod') {
       return;
@@ -2180,15 +2521,19 @@ export default function App() {
       content: '',
       loading: true,
       error: '',
+      streamActive: true,
+      streamNonce: Number(tab.streamNonce || 0) + 1,
+      streamStarted: false,
+      streamConnected: false,
+      streamError: '',
       tail: 400,
       canLoadOlder: true,
       loadingOlder: false
     };
     upsertTab(nextTab, false);
-    await refreshLogTab(tabId, false, {
-      forceScrollToBottom: true,
-      tabOverride: nextTab
-    });
+    if (nextTab.follow) {
+      scheduleLogsScrollToBottom();
+    }
   }
 
   function appendExecOutput(tabId, chunk) {
@@ -2202,38 +2547,26 @@ export default function App() {
     )));
   }
 
-  function openPodExecTab(namespace, podName, container = '', containers = []) {
-    const knownPod = pods.find((item) => item.namespace === namespace && item.name === podName);
-    const containerOptions = normalizeContainerNames(
-      Array.isArray(containers) && containers.length > 0 ? containers : knownPod?.containers
-    );
-    const selectedContainer = String(container || containerOptions[0] || '').trim();
-    const id = `exec:pod:${namespace}:${podName}:${selectedContainer || '-'}`;
-    const title = `Exec ${namespace}/${podName}${selectedContainer ? `:${selectedContainer}` : ''}`;
-    const existing = execSocketsRef.current[id];
-    if (existing && existing.readyState === WebSocket.OPEN) {
-      setActiveBottomTabId(id);
-      return;
+  function connectPodExecTab(tab) {
+    const id = tab.id;
+    const previous = execSocketsRef.current[id];
+    if (previous) {
+      previous.onopen = null;
+      previous.onmessage = null;
+      previous.onerror = null;
+      previous.onclose = null;
+      try {
+        previous.close();
+      } catch {
+        // ignore stale websocket close errors
+      }
     }
 
-    upsertTab({
-      id,
-      type: 'exec',
-      title,
-      content: '',
-      namespace,
-      pod: podName,
-      container: selectedContainer,
-      containers: containerOptions,
-      connected: false,
-      loading: false,
-      error: ''
-    });
-
+    upsertTab({ id, connected: false, error: '' }, false);
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const params = new URLSearchParams({ namespace, pod: podName, token, username });
-    if (selectedContainer) {
-      params.set('container', selectedContainer);
+    const params = new URLSearchParams({ namespace: tab.namespace, pod: tab.pod, token, username });
+    if (tab.container) {
+      params.set('container', tab.container);
     }
     const wsURL = `${protocol}//${window.location.host}${withBasePath(`/api/pods/exec/ws?${params.toString()}`)}`;
     const ws = new WebSocket(wsURL);
@@ -2259,6 +2592,45 @@ export default function App() {
       delete execSocketsRef.current[id];
       upsertTab({ id, connected: false }, false);
     };
+  }
+
+  function openPodExecTab(namespace, podName, container = '', containers = []) {
+    const knownPod = pods.find((item) => item.namespace === namespace && item.name === podName);
+    const containerOptions = normalizeContainerNames(
+      Array.isArray(containers) && containers.length > 0 ? containers : knownPod?.containers
+    );
+    const selectedContainer = String(container || containerOptions[0] || '').trim();
+    const id = `exec:pod:${namespace}:${podName}:${selectedContainer || '-'}`;
+    const title = `Exec ${namespace}/${podName}${selectedContainer ? `:${selectedContainer}` : ''}`;
+    const existing = execSocketsRef.current[id];
+    if (existing && existing.readyState === WebSocket.OPEN) {
+      setActiveBottomTabId(id);
+      return;
+    }
+
+    const tab = {
+      id,
+      type: 'exec',
+      title,
+      content: '',
+      namespace,
+      pod: podName,
+      container: selectedContainer,
+      containers: containerOptions,
+      connected: false,
+      loading: false,
+      error: ''
+    };
+    upsertTab(tab);
+    connectPodExecTab(tab);
+  }
+
+  function reconnectPodExecTab(tabId) {
+    const tab = bottomTabsRef.current.find((item) => item.id === tabId);
+    if (!tab || tab.type !== 'exec') {
+      return;
+    }
+    connectPodExecTab(tab);
   }
 
   function sendExecData(tabId, data) {
@@ -2298,12 +2670,16 @@ export default function App() {
   async function restartDeployment() {
     const targetNamespace = deploymentNamespace || primaryNamespace;
     if (!targetNamespace) throw new Error('Select namespace first');
+    await restartDeploymentByRef(targetNamespace, deploymentName);
+    await refreshAll();
+  }
+
+  async function restartDeploymentByRef(namespace, name) {
     await api('/api/deployments/restart', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ namespace: targetNamespace, name: deploymentName })
+      body: JSON.stringify({ namespace, name })
     });
-    await refreshAll();
   }
 
   function openScaleModal(workload) {
@@ -2397,13 +2773,15 @@ export default function App() {
 
   async function refreshUsers() {
     if (!api || !isAdmin) return;
-    const [usersData, rolesData, googleConfigData, googleMappingsData, oidcConfigData, oidcMappingsData] = await Promise.all([
+    const [usersData, rolesData, googleConfigData, googleMappingsData, oidcConfigData, oidcMappingsData, entraConfigData, entraMappingsData] = await Promise.all([
       api('/api/admin/users'),
       api('/api/admin/roles'),
       api('/api/admin/google/config'),
       api('/api/admin/google/mappings'),
       api('/api/admin/oidc/config'),
-      api('/api/admin/oidc/mappings')
+      api('/api/admin/oidc/mappings'),
+      api('/api/admin/entra/config'),
+      api('/api/admin/entra/mappings')
     ]);
     const roles = rolesData.items || [];
     setManagedUsers(usersData.items || []);
@@ -2418,6 +2796,8 @@ export default function App() {
     setGoogleMappings(googleMappingsData.items || []);
     setOIDCConfig(normalizeOIDCConfig(oidcConfigData));
     setOIDCMappings(oidcMappingsData.items || []);
+    setEntraConfig(normalizeOIDCConfig(entraConfigData, DEFAULT_ENTRA_CONFIG));
+    setEntraMappings(entraMappingsData.items || []);
     if (roles.length > 0 && !roles.find((r) => r.name === newUserRole)) {
       setNewUserRole(roles[0].name);
     }
@@ -2571,31 +2951,37 @@ export default function App() {
 
   async function saveOIDCConfig() {
     const nextConfig = normalizeOIDCConfig(oidcConfigDraft, oidcConfigModalMode === 'entra' ? DEFAULT_ENTRA_CONFIG : DEFAULT_OIDC_CONFIG);
-    await api('/api/admin/oidc/config', {
+    const endpoint = oidcConfigModalMode === 'entra' ? '/api/admin/entra/config' : '/api/admin/oidc/config';
+    await api(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nextConfig)
     });
-    setOIDCConfig(nextConfig);
+    if (oidcConfigModalMode === 'entra') {
+      setEntraConfig(nextConfig);
+    } else {
+      setOIDCConfig(nextConfig);
+    }
     await reloadAuthProviders();
     await refreshUsers();
   }
 
   function openOIDCConfigModal() {
-    setOIDCConfigDraft(normalizeOIDCConfig(isEntraOIDCConfig(oidcConfig) ? DEFAULT_OIDC_CONFIG : oidcConfig, DEFAULT_OIDC_CONFIG));
+    setOIDCConfigDraft(normalizeOIDCConfig(oidcConfig, DEFAULT_OIDC_CONFIG));
     setOIDCConfigModalMode('oidc');
     setShowOIDCConfigModal(true);
   }
 
   function openEntraConfigModal() {
-    setOIDCConfigDraft(normalizeOIDCConfig(isEntraOIDCConfig(oidcConfig) ? oidcConfig : DEFAULT_ENTRA_CONFIG, DEFAULT_ENTRA_CONFIG));
+    setOIDCConfigDraft(normalizeOIDCConfig(entraConfig, DEFAULT_ENTRA_CONFIG));
     setOIDCConfigModalMode('entra');
     setShowOIDCConfigModal(true);
   }
 
   async function testOIDCConfig() {
     const testConfig = normalizeOIDCConfig(oidcConfigDraft, oidcConfigModalMode === 'entra' ? DEFAULT_ENTRA_CONFIG : DEFAULT_OIDC_CONFIG);
-    const data = await api('/api/admin/oidc/config/test', {
+    const endpoint = oidcConfigModalMode === 'entra' ? '/api/admin/entra/config/test' : '/api/admin/oidc/config/test';
+    const data = await api(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(testConfig)
@@ -2614,6 +3000,31 @@ export default function App() {
     await reloadAuthProviders();
     await refreshUsers();
     showBottomNoticeMessage('success', 'OpenID Connect has been disabled');
+  }
+
+  async function disableEntraAuth() {
+    if (!window.confirm('Disable Azure Entra ID and remove all Entra group mappings?')) {
+      return;
+    }
+    await api('/api/admin/entra/reset', { method: 'POST' });
+    setShowOIDCConfigModal(false);
+    setShowOIDCMappingsModal(false);
+    resetOIDCMappingForm();
+    await reloadAuthProviders();
+    await refreshUsers();
+    showBottomNoticeMessage('success', 'Azure Entra ID has been disabled');
+  }
+
+  function openOIDCMappingsModal() {
+    setOIDCMappingsModalMode('oidc');
+    resetOIDCMappingForm();
+    setShowOIDCMappingsModal(true);
+  }
+
+  function openEntraMappingsModal() {
+    setOIDCMappingsModalMode('entra');
+    resetOIDCMappingForm();
+    setShowOIDCMappingsModal(true);
   }
 
   async function saveGoogleMapping() {
@@ -2656,8 +3067,9 @@ export default function App() {
 
   async function saveOIDCMapping() {
     const groupName = editingOIDCGroupName || newOIDCGroupName.trim();
-    if (!groupName) throw new Error('OpenID Connect group is required');
-    await api('/api/admin/oidc/mappings', {
+    const isEntra = oidcMappingsModalMode === 'entra';
+    if (!groupName) throw new Error(`${isEntra ? 'Azure Entra ID' : 'OpenID Connect'} group is required`);
+    await api(isEntra ? '/api/admin/entra/mappings' : '/api/admin/oidc/mappings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ group_name: groupName, role: newOIDCRole })
@@ -2669,7 +3081,8 @@ export default function App() {
   }
 
   async function deleteOIDCMapping(groupName) {
-    await api('/api/admin/oidc/mappings/delete', {
+    const endpoint = oidcMappingsModalMode === 'entra' ? '/api/admin/entra/mappings/delete' : '/api/admin/oidc/mappings/delete';
+    await api(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ group_name: groupName })
@@ -2973,6 +3386,7 @@ export default function App() {
         authProviders={authProviders}
         startGoogleLogin={startGoogleLogin}
         startOIDCLogin={startOIDCLogin}
+        startEntraLogin={startEntraLogin}
         authError=""
         showInputs={false}
         appVersion={authProviders.appVersion || ''}
@@ -3023,6 +3437,7 @@ export default function App() {
         authProviders={authProviders}
         startGoogleLogin={startGoogleLogin}
         startOIDCLogin={startOIDCLogin}
+        startEntraLogin={startEntraLogin}
         authError={authError}
         appVersion={authProviders.appVersion || ''}
       />
@@ -3143,9 +3558,7 @@ export default function App() {
               openEditTab={openEditTab}
               openWorkloadLogsTab={openWorkloadLogsTab}
               openScaleModal={openScaleModal}
-              setDeploymentName={setDeploymentName}
-              setDeploymentNamespace={setDeploymentNamespace}
-              restartDeployment={restartDeployment}
+              restartDeploymentByRef={restartDeploymentByRef}
               deleteResourceByRef={deleteResourceByRef}
               refreshAll={refreshAll}
             />
@@ -3470,18 +3883,27 @@ export default function App() {
               oidcAuthConfigured={oidcAuthConfigured}
               oidcConfig={oidcConfig}
               oidcMappings={oidcMappings}
+              entraAuthConfigured={entraAuthConfigured}
+              entraConfig={entraConfig}
+              entraMappings={entraMappings}
               openOIDCConfigModal={openOIDCConfigModal}
               openEntraConfigModal={openEntraConfigModal}
-              setShowOIDCMappingsModal={setShowOIDCMappingsModal}
+              openOIDCMappingsModal={openOIDCMappingsModal}
+              openEntraMappingsModal={openEntraMappingsModal}
               disableOIDCAuth={disableOIDCAuth}
+              disableEntraAuth={disableEntraAuth}
               safe={safe}
             />
           )}
 
-          {activeNav === 'cluster-health' && (
-            <ClusterHealthPage
+          {activeNav === 'dashboard' && (
+            <DashboardPage
+              access={dashboardAccess}
+              insightCategories={dashboardInsightCategories}
+              loading={dashboardLoading}
+              selectedNamespaces={selectedNamespaces}
               nodes={nodes}
-              pods={pods}
+              pods={healthPods}
               workloads={workloads}
               services={services}
               ingresses={ingresses}
@@ -3489,10 +3911,10 @@ export default function App() {
               pvs={pvs}
               storageClasses={storageClasses}
               events={events}
+              insights={dashboardInsights}
               runningPodsHealth={runningPodsHealth}
               formatMilliValue={formatMilliValue}
               formatByteValue={formatByteValue}
-              formatGPURequestLabel={formatGPURequestLabel}
             />
           )}
 
@@ -3523,8 +3945,8 @@ export default function App() {
           closeTab={closeTab}
           activeBottomTab={activeBottomTab}
           upsertTab={upsertTab}
-          scheduleLogsScrollToBottom={scheduleLogsScrollToBottom}
-          refreshLogTab={refreshLogTab}
+          setLogFollow={setLogFollow}
+          refreshLogAction={refreshLogAction}
           changeLogContainer={changeLogContainer}
           refreshManifestTab={refreshManifestTab}
           refreshYamlTab={refreshApplicationDetailTab}
@@ -3545,6 +3967,7 @@ export default function App() {
           refreshAll={refreshAll}
           isDegradedReady={isDegradedReady}
           openPodExecTab={openPodExecTab}
+          reconnectPodExecTab={reconnectPodExecTab}
           deletePodByRef={deletePodByRef}
           selectedPod={selectedPod}
           setSelectedPod={setSelectedPod}
@@ -3597,8 +4020,9 @@ export default function App() {
       <OIDCMappingsModal
         open={showOIDCMappingsModal}
         onClose={() => setShowOIDCMappingsModal(false)}
-        providerName={oidcConfig.provider_name || 'OpenID Connect'}
-        mappings={oidcMappings}
+        providerName={oidcMappingsModalMode === 'entra' ? (entraConfig.provider_name || 'Azure Entra ID') : (oidcConfig.provider_name || 'OpenID Connect')}
+        mode={oidcMappingsModalMode}
+        mappings={oidcMappingsModalMode === 'entra' ? entraMappings : oidcMappings}
         groupName={newOIDCGroupName}
         role={newOIDCRole}
         editingGroupName={editingOIDCGroupName}

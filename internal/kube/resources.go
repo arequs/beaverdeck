@@ -692,9 +692,13 @@ func (c *Client) ListServices(ctx context.Context, ns string) ([]ServiceInfo, er
 	return out, nil
 }
 
-func (c *Client) ListPVCs(ctx context.Context, namespaces []string) ([]PVCInfo, error) {
+func (c *Client) ListPVCs(ctx context.Context, namespaces []string, includeMetrics ...bool) ([]PVCInfo, error) {
 	nsList := uniqueStrings(namespaces)
-	usageByPVC, statsAvailable, _ := c.collectPVCVolumeStats(ctx)
+	usageByPVC := map[string]pvcVolumeUsage{}
+	statsAvailable := false
+	if len(includeMetrics) == 0 || includeMetrics[0] {
+		usageByPVC, statsAvailable, _ = c.collectPVCVolumeStats(ctx)
+	}
 
 	out := make([]PVCInfo, 0)
 	for _, ns := range nsList {
@@ -736,12 +740,16 @@ func (c *Client) ListPVCs(ctx context.Context, namespaces []string) ([]PVCInfo, 
 	return out, nil
 }
 
-func (c *Client) ListPVs(ctx context.Context) ([]PVInfo, error) {
+func (c *Client) ListPVs(ctx context.Context, includeMetrics ...bool) ([]PVInfo, error) {
 	items, err := c.core.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	usageByPVC, statsAvailable, _ := c.collectPVCVolumeStats(ctx)
+	usageByPVC := map[string]pvcVolumeUsage{}
+	statsAvailable := false
+	if len(includeMetrics) == 0 || includeMetrics[0] {
+		usageByPVC, statsAvailable, _ = c.collectPVCVolumeStats(ctx)
+	}
 
 	out := make([]PVInfo, 0, len(items.Items))
 	for _, item := range items.Items {
@@ -779,11 +787,17 @@ func (c *Client) collectPVCVolumeStats(ctx context.Context) (map[string]pvcVolum
 	if err != nil {
 		return nil, false, err
 	}
+	return c.collectPVCVolumeStatsForNodes(ctx, nodes.Items)
+}
 
+func (c *Client) collectPVCVolumeStatsForNodes(ctx context.Context, nodes []corev1.Node) (map[string]pvcVolumeUsage, bool, error) {
 	usageByPVC := make(map[string]pvcVolumeUsage)
 	statsAvailable := false
+	if len(nodes) == 0 {
+		return usageByPVC, false, nil
+	}
 	restClient := c.core.CoreV1().RESTClient()
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		path := fmt.Sprintf("/api/v1/nodes/%s/proxy/stats/summary", node.Name)
 		raw, err := restClient.Get().AbsPath(path).DoRaw(ctx)
 		if err != nil {

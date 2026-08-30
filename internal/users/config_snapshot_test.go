@@ -50,16 +50,29 @@ func TestConfigSnapshotExportImportRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := source.UpdateOIDCConfig(ctx, OIDCConfig{
-		ProviderName: "Azure Entra ID",
-		IssuerURL:    "https://login.microsoftonline.com/example/v2.0",
+		ProviderName: "Corporate OIDC",
+		IssuerURL:    "https://id.example.com",
 		ClientID:     "oidc-client",
 		ClientSecret: "oidc-secret",
-		Scopes:       "openid email profile groups User.Read",
+		Scopes:       "openid email profile groups",
 		GroupsClaim:  "groups",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := source.UpsertOIDCGroupRole(ctx, "entra-group-id", RoleAdmin); err != nil {
+	if err := source.UpsertOIDCGroupRole(ctx, "oidc-operators", Role("ops")); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.UpdateEntraConfig(ctx, OIDCConfig{
+		ProviderName: "Azure Entra ID",
+		IssuerURL:    "https://login.microsoftonline.com/example/v2.0",
+		ClientID:     "entra-client",
+		ClientSecret: "entra-secret",
+		Scopes:       "openid email profile User.Read GroupMember.Read.All",
+		GroupsClaim:  "groups",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.UpsertEntraGroupRole(ctx, "entra-group-id", RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := source.ExportConfig(ctx)
@@ -132,8 +145,26 @@ func TestConfigSnapshotExportImportRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(oidcMappings) != 1 || oidcMappings[0].GroupName != "entra-group-id" {
+	if len(oidcMappings) != 1 || oidcMappings[0].GroupName != "oidc-operators" {
 		t.Fatalf("unexpected oidc mappings: %#v", oidcMappings)
+	}
+	entraMappings, err := target.ListEntraGroupRoles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entraMappings) != 1 || entraMappings[0].GroupName != "entra-group-id" {
+		t.Fatalf("unexpected entra mappings: %#v", entraMappings)
+	}
+	entraToken, err := target.CreateExternalSession(ctx, "Entra@Example.COM", "entra", RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entraUser, err := target.Authenticate(ctx, entraToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entraUser.Username != "entra@example.com" || entraUser.AuthSource != "entra" {
+		t.Fatalf("unexpected Entra session user: %#v", entraUser)
 	}
 	externalToken, err := target.CreateExternalSession(ctx, "External@Example.COM", "oidc", RoleAdmin)
 	if err != nil {
@@ -159,6 +190,90 @@ func TestConfigSnapshotExportImportRoundTrip(t *testing.T) {
 	}
 	if len(afterExternalLogin.Users) != 2 {
 		t.Fatalf("external session user should not be exported: %#v", afterExternalLogin.Users)
+	}
+}
+
+func TestOIDCAndEntraConfigurationsAreIndependent(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+
+	oidcConfig := OIDCConfig{
+		ProviderName: "Corporate OIDC",
+		IssuerURL:    "https://id.example.com",
+		ClientID:     "oidc-client",
+		ClientSecret: "oidc-secret",
+	}
+	entraConfig := OIDCConfig{
+		ProviderName: "Azure Entra ID",
+		IssuerURL:    "https://login.microsoftonline.com/tenant/v2.0",
+		ClientID:     "entra-client",
+		ClientSecret: "entra-secret",
+	}
+	if err := store.UpdateOIDCConfig(ctx, oidcConfig); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateEntraConfig(ctx, entraConfig); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertOIDCGroupRole(ctx, "oidc-admins", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertEntraGroupRole(ctx, "entra-admins", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+
+	gotOIDC, err := store.GetOIDCConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotEntra, err := store.GetEntraConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOIDC.ClientID != "oidc-client" || gotOIDC.IssuerURL != oidcConfig.IssuerURL {
+		t.Fatalf("unexpected OIDC config: %#v", gotOIDC)
+	}
+	if gotEntra.ClientID != "entra-client" || gotEntra.IssuerURL != entraConfig.IssuerURL {
+		t.Fatalf("unexpected Entra config: %#v", gotEntra)
+	}
+	if _, _, err := store.ResolveOIDCRole(ctx, []string{"entra-admins"}); err == nil {
+		t.Fatal("generic OIDC must not use Entra mappings")
+	}
+	if _, _, err := store.ResolveEntraRole(ctx, []string{"oidc-admins"}); err == nil {
+		t.Fatal("Entra must not use generic OIDC mappings")
+	}
+
+	if err := store.ResetOIDCAuth(ctx); err != nil {
+		t.Fatal(err)
+	}
+	gotEntra, err = store.GetEntraConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotEntra.ClientID != "entra-client" {
+		t.Fatalf("resetting OIDC changed Entra config: %#v", gotEntra)
+	}
+	entraMappings, err := store.ListEntraGroupRoles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entraMappings) != 1 || entraMappings[0].GroupName != "entra-admins" {
+		t.Fatalf("resetting OIDC changed Entra mappings: %#v", entraMappings)
+	}
+
+	snapshot, err := store.ExportConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.OIDC.Config.ClientID != "" || snapshot.Entra.Config.ClientID != "entra-client" {
+		t.Fatalf("export did not preserve independent provider sections: %#v", snapshot)
 	}
 }
 
@@ -492,6 +607,9 @@ oidc:
     issuer_url: https://login.microsoftonline.com/example/v2.0
     client_id: oidc-client
     client_secret: oidc-secret
+  mappings:
+    - group_name: legacy-entra-admins
+      role: admin
 `, adminHash)
 	snapshot, err := DecodeConfigSnapshotBytes([]byte(raw))
 	if err != nil {
@@ -538,13 +656,51 @@ oidc:
 	if completed.OIDC.Config.EmailClaim != defaultOIDCEmailClaim || completed.OIDC.Config.GroupsClaim != defaultOIDCGroupsClaim {
 		t.Fatalf("expected default oidc claims, got email=%q groups=%q", completed.OIDC.Config.EmailClaim, completed.OIDC.Config.GroupsClaim)
 	}
-	if completed.OIDC.Config.ClientID != "oidc-client" || completed.OIDC.Config.ClientSecret != "oidc-secret" {
-		t.Fatalf("oidc config was not preserved: %#v", completed.OIDC.Config)
+	if completed.OIDC.Config.ClientID != "" || completed.OIDC.Config.ClientSecret != "" {
+		t.Fatalf("legacy Entra config must not remain in generic OIDC: %#v", completed.OIDC.Config)
+	}
+	if completed.Entra.Config.ClientID != "oidc-client" || completed.Entra.Config.ClientSecret != "oidc-secret" {
+		t.Fatalf("legacy Entra config was not migrated: %#v", completed.Entra.Config)
+	}
+	if completed.Entra.Config.ProviderName != "Azure Entra ID" || completed.Entra.Config.Scopes != defaultEntraScopes {
+		t.Fatalf("legacy Entra defaults were not completed: %#v", completed.Entra.Config)
+	}
+	if len(completed.OIDC.Mappings) != 0 || len(completed.Entra.Mappings) != 1 || completed.Entra.Mappings[0].GroupName != "legacy-entra-admins" {
+		t.Fatalf("legacy Entra mappings were not migrated independently: oidc=%#v entra=%#v", completed.OIDC.Mappings, completed.Entra.Mappings)
 	}
 	googleConfig := completed.Google.Config
 	googleConfig.UpdatedAt = ""
 	if googleConfig != (GoogleConfig{}) {
 		t.Fatalf("expected google config to be completed empty, got %#v", completed.Google.Config)
+	}
+}
+
+func TestExplicitEntraSectionKeepsMicrosoftIssuerInGenericOIDC(t *testing.T) {
+	raw := `
+oidc:
+  config:
+    provider_name: Microsoft-compatible OIDC
+    issuer_url: https://login.microsoftonline.com/example/v2.0
+    client_id: generic-client
+    client_secret: generic-secret
+  mappings: []
+entra:
+  config: {}
+  mappings: []
+`
+	snapshot, err := DecodeConfigSnapshotBytes([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized, err := NormalizeConfigSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.OIDC.Config.ClientID != "generic-client" || normalized.OIDC.Config.ClientSecret != "generic-secret" {
+		t.Fatalf("explicit generic OIDC config was moved unexpectedly: %#v", normalized.OIDC.Config)
+	}
+	if normalized.Entra.Config.ClientID != "" || normalized.Entra.Config.ClientSecret != "" {
+		t.Fatalf("explicit empty Entra section must stay independent: %#v", normalized.Entra.Config)
 	}
 }
 

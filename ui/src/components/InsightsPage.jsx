@@ -22,6 +22,28 @@ function InsightHelpButton({ checkType }) {
   );
 }
 
+const LOG_RESOURCE_KINDS = ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet'];
+
+function insightTarget(alert) {
+  if (alert.resource_kind && alert.resource_name) {
+    const name = alert.namespace
+      ? `${alert.namespace}/${alert.resource_name}`
+      : alert.resource_name;
+    return `${alert.resource_kind}: ${name}`;
+  }
+  if (alert.namespace) return `Namespace: ${alert.namespace}`;
+  if (alert.node) return `Node: ${alert.node}`;
+  return alert.title || 'Cluster-wide result';
+}
+
+function groupCountLabel(group) {
+  const parts = [];
+  if (group.alertCount > 0) parts.push(`${group.alertCount} alert${group.alertCount === 1 ? '' : 's'}`);
+  if (group.passingCount > 0) parts.push(`${group.passingCount} passing`);
+  if (group.suppressedCount > 0) parts.push(`${group.suppressedCount} suppressed`);
+  return parts.join(' · ');
+}
+
 export default function InsightsPage({
   categoryLabel,
   showAllInsightChecks,
@@ -121,64 +143,78 @@ export default function InsightsPage({
       {groupedInsights.length > 0 && (
         <div className="insights-grid">
           {groupedInsights.map((group) => (
-            <section key={group.label} className="insight-dashboard">
-              <div className="insight-dashboard-head">
-                <div>
-                  <div className="small-label">Dashboard</div>
-                  <h2>{group.label}</h2>
-                  <div className="insight-dashboard-subtitle">{group.category}</div>
+            <section key={group.key} className="insight-dashboard">
+              <article
+                className={`insight-card insight-group-card severity-${group.severity} status-${group.alertCount > 0 ? 'alert' : 'ok'}`}
+              >
+                <div className="insight-card-head">
+                  <div>
+                    <div className="small-label">{group.category}</div>
+                    <h2>{group.label}</h2>
+                  </div>
+                  <div className="insight-group-status">
+                    <span className={`severity-badge severity-${group.severity}`}>
+                      {group.alertCount > 0 ? group.severity : 'ok'}
+                    </span>
+                    <span className="insight-dashboard-count">{groupCountLabel(group)}</span>
+                  </div>
                 </div>
-                <span className="insight-dashboard-count">{group.items.length} checks</span>
-              </div>
-              <div className="insight-dashboard-cards">
-                {group.items.map((alert) => (
-                  <article
-                    key={alert.key}
-                    className={`insight-card severity-${String(alert.severity || 'warning').toLowerCase()} status-${String(alert.status || 'alert').toLowerCase()}`}
-                  >
-                    <div className="insight-card-head">
-                      <div>
-                        <div className="small-label">{alert.status === 'alert' ? alert.category : `${alert.category} Check`}</div>
-                        <h3>{alert.title}</h3>
-                      </div>
-                      <div className="insight-actions">
-                        <span className={`severity-badge severity-${String(alert.severity || 'warning').toLowerCase()}`}>
-                          {alert.status === 'alert' ? alert.severity : 'ok'}
-                        </span>
-                        <button onClick={() => openInsightResource(alert)} disabled={!alert.resource_kind || !alert.resource_name}>
-                          Open Resource
-                        </button>
-                        <button
-                          onClick={() => openInsightLogs(alert)}
-                          disabled={!['Pod', 'Deployment', 'StatefulSet', 'DaemonSet'].includes(String(alert.resource_kind || ''))}
-                        >
-                          Open Logs
-                        </button>
-                        {alert.status === 'alert' ? (
-                          <button onClick={() => safe(() => setInsightSuppressed(alert.key, !alert.suppressed))}>
-                            {alert.suppressed ? 'Restore' : 'Ignore'}
-                          </button>
+                <p className="insight-summary">
+                  {(group.items.find((item) => item.status === 'alert') || group.items[0])?.summary}
+                </p>
+                <div className="insight-group-results">
+                  {group.items.map((alert) => (
+                    <div
+                      key={alert.key}
+                      className={`insight-result-row status-${String(alert.status || 'alert').toLowerCase()}`}
+                    >
+                      <div className="insight-result-main">
+                        <div className="insight-result-head">
+                          <strong>{insightTarget(alert)}</strong>
+                          {(String(alert.severity || 'warning').toLowerCase() !== group.severity) ? (
+                            <span className={`severity-badge severity-${String(alert.severity || 'warning').toLowerCase()}`}>
+                              {alert.status === 'alert' ? alert.severity : 'ok'}
+                            </span>
+                          ) : null}
+                        </div>
+                        {(alert.node && alert.resource_kind !== 'Node') || alert.suppressed ? (
+                          <div className="insight-meta">
+                            {alert.node && alert.resource_kind !== 'Node' ? <span>Node: {alert.node}</span> : null}
+                            {alert.suppressed ? <span>Suppressed</span> : null}
+                          </div>
+                        ) : null}
+                        {Array.isArray(alert.details) && alert.details.length > 0 ? (
+                          <ul className="insight-details">
+                            {alert.details.map((detail) => (
+                              <li key={detail}>{detail}</li>
+                            ))}
+                          </ul>
                         ) : null}
                       </div>
+                      {(alert.resource_kind && alert.resource_name) || alert.status === 'alert' ? (
+                        <div className="insight-actions insight-result-actions">
+                          {alert.resource_kind && alert.resource_name ? (
+                            <button onClick={() => openInsightResource(alert)}>
+                              Open Resource
+                            </button>
+                          ) : null}
+                          {LOG_RESOURCE_KINDS.includes(String(alert.resource_kind || '')) ? (
+                            <button onClick={() => openInsightLogs(alert)}>
+                              Open Logs
+                            </button>
+                          ) : null}
+                          {alert.status === 'alert' ? (
+                            <button onClick={() => safe(() => setInsightSuppressed(alert.key, !alert.suppressed))}>
+                              {alert.suppressed ? 'Restore' : 'Ignore'}
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
-                    <p className="insight-summary">{alert.summary}</p>
-                    <div className="insight-meta">
-                      {alert.namespace ? <span>Namespace: {alert.namespace}</span> : null}
-                      {alert.node ? <span>Node: {alert.node}</span> : null}
-                      {alert.resource_kind && alert.resource_name ? <span>{alert.resource_kind}: {alert.resource_name}</span> : null}
-                      {alert.suppressed ? <span>Suppressed</span> : null}
-                    </div>
-                    {Array.isArray(alert.details) && alert.details.length > 0 ? (
-                      <ul className="insight-details">
-                        {alert.details.map((detail) => (
-                          <li key={detail}>{detail}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    <InsightHelpButton checkType={alert.check_type} />
-                  </article>
-                ))}
-              </div>
+                  ))}
+                </div>
+                <InsightHelpButton checkType={group.checkType} />
+              </article>
             </section>
           ))}
         </div>

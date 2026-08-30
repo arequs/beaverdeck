@@ -3,14 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/gorilla/websocket"
 )
-
-func sanitizeSSE(in string) string {
-	return strings.ReplaceAll(in, "\n", "\\n")
-}
 
 func errString(err error) string {
 	if err == nil {

@@ -8,7 +8,8 @@ const DEFAULT_AUTH_PROVIDERS = {
   appVersion: '',
   local: true,
   google: { enabled: false, hosted_domain: '' },
-  oidc: { enabled: false, provider_name: 'OpenID Connect', hosted_domain: '' }
+  oidc: { enabled: false, provider_name: 'OpenID Connect', hosted_domain: '' },
+  entra: { enabled: false, provider_name: 'Azure Entra ID', hosted_domain: '' }
 };
 
 const DEFAULT_BOOTSTRAP_STATE = {
@@ -104,6 +105,11 @@ export default function useAuthSession({
           enabled: Boolean(data.oidc?.enabled),
           provider_name: data.oidc?.provider_name || 'OpenID Connect',
           hosted_domain: data.oidc?.hosted_domain || ''
+        },
+        entra: {
+          enabled: Boolean(data.entra?.enabled),
+          provider_name: data.entra?.provider_name || 'Azure Entra ID',
+          hosted_domain: data.entra?.hosted_domain || ''
         }
       });
     } catch {
@@ -203,6 +209,10 @@ export default function useAuthSession({
 
   function startOIDCLogin() {
     window.location.href = withBasePath('/api/auth/oidc/start');
+  }
+
+  function startEntraLogin() {
+    window.location.href = withBasePath('/api/auth/entra/start');
   }
 
   async function logout(options = {}) {
@@ -322,6 +332,7 @@ export default function useAuthSession({
     logout,
     reloadAuthProviders: loadAuthProviders,
     startGoogleLogin,
-    startOIDCLogin
+    startOIDCLogin,
+    startEntraLogin
   };
 }

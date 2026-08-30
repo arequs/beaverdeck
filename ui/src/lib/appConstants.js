@@ -1,5 +1,12 @@
 export const MENU = [
   {
+    section: 'Dashboard',
+    standalone: true,
+    items: [
+      { id: 'dashboard', label: 'Dashboard' }
+    ]
+  },
+  {
     section: 'Workloads',
     items: [
       { id: 'pods', label: 'Pods' },
@@ -55,8 +62,7 @@ export const MENU = [
       { id: 'insights-networking', label: 'Network Insights' },
       { id: 'insights-storage', label: 'Storage Insights' },
       { id: 'insights-security', label: 'Security Insights' },
-      { id: 'insights-configuration', label: 'Configuration Insights' },
-      { id: 'cluster-health', label: 'Cluster Health' }
+      { id: 'insights-configuration', label: 'Configuration Insights' }
     ]
   },
   {
@@ -112,7 +118,7 @@ export const SORT_DEFAULTS = {
 
 export const ROLE_RESOURCES = ['pods', 'workloads', 'nodes', 'services', 'clusterroles', 'rbacroles', 'serviceaccounts', 'ingresses', 'configmaps', 'crds', 'applications', 'secrets', 'pvcs', 'pvs', 'storageclasses', 'events', 'insights', 'exec', 'apply'];
 export const CLUSTER_SCOPED_RESOURCES = new Set(['nodes', 'pvs', 'storageclasses']);
-export const BOTTOM_DOCK_HIDDEN_NAVS = new Set([...INSIGHT_NAV_IDS, 'cluster-health', 'user-management', 'apply']);
+export const BOTTOM_DOCK_HIDDEN_NAVS = new Set([...INSIGHT_NAV_IDS, 'dashboard', 'user-management', 'apply']);
 export const DOCK_TOP_RATIO_DEFAULT = 0.62;
 export const DOCK_TOP_RATIO_MIN = 0.3;
 export const DOCK_TOP_RATIO_MAX = 0.8;

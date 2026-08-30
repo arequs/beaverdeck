@@ -1,5 +1,15 @@
 import React from 'react';
 import ActionMenu from './ActionMenu.jsx';
+import { BulkActionButton, BulkRowSelect, BulkSelectAll, BulkSelectionCount } from './BulkSelection.jsx';
+import useBulkSelection from '../hooks/useBulkSelection.js';
+
+function serviceAccountKey(item) {
+  return `${item.namespace}/${item.name}`;
+}
+
+function clusterResourceKey(item) {
+  return item.name;
+}
 
 export function ClusterRolesPage({
   sortedClusterRoles,
@@ -16,14 +26,31 @@ export function ClusterRolesPage({
   deleteResourceByRef,
   refreshAll
 }) {
+  const rolesSelection = useBulkSelection(sortedClusterRoles, clusterResourceKey);
+  const bindingsSelection = useBulkSelection(sortedClusterRoleBindings, clusterResourceKey);
   return (
     <div className="stacked-table-view">
       <section className="stacked-table-section">
-        <div className="small-label">ClusterRoles</div>
+        <div className="toolbar fixed-toolbar">
+          <div className="small-label">ClusterRoles</div>
+          <BulkSelectionCount selection={rolesSelection} />
+          {rolesSelection.count > 0 ? (
+            <BulkActionButton
+              selection={rolesSelection}
+              verb="Delete"
+              className="danger"
+              getPermission={() => permissionInfo('clusterroles', 'delete')}
+              runItem={(item) => deleteResourceByRef('clusterrole', '', item.name)}
+              refreshAll={refreshAll}
+              safe={safe}
+            />
+          ) : null}
+        </div>
         <div className="table-wrap stacked-table-wrap">
           <table>
             <thead>
               <tr>
+                <th><BulkSelectAll selection={rolesSelection} label="cluster roles" /></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('clusterroles', 'name')}>Name {sortMark('clusterroles', 'name')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('clusterroles', 'rules')}>Rules {sortMark('clusterroles', 'rules')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('clusterroles', 'age')}>Age {sortMark('clusterroles', 'age')}</button></th>
@@ -32,7 +59,8 @@ export function ClusterRolesPage({
             </thead>
             <tbody>
               {sortedClusterRoles.map((item) => (
-                <tr key={item.name}>
+                <tr key={item.name} className={rolesSelection.selectedKeySet.has(clusterResourceKey(item)) ? 'active-row' : ''}>
+                  <td><BulkRowSelect selection={rolesSelection} item={item} itemKey={clusterResourceKey(item)} label={item.name} /></td>
                   <td>{item.name}</td>
                   <td>{item.rules}</td>
                   <td>{item.age}</td>
@@ -56,11 +84,26 @@ export function ClusterRolesPage({
       </section>
 
       <section className="stacked-table-section">
-        <div className="small-label">ClusterRoleBindings</div>
+        <div className="toolbar fixed-toolbar">
+          <div className="small-label">ClusterRoleBindings</div>
+          <BulkSelectionCount selection={bindingsSelection} />
+          {bindingsSelection.count > 0 ? (
+            <BulkActionButton
+              selection={bindingsSelection}
+              verb="Delete"
+              className="danger"
+              getPermission={() => permissionInfo('clusterroles', 'delete')}
+              runItem={(item) => deleteResourceByRef('clusterrolebinding', '', item.name)}
+              refreshAll={refreshAll}
+              safe={safe}
+            />
+          ) : null}
+        </div>
         <div className="table-wrap stacked-table-wrap">
           <table>
             <thead>
               <tr>
+                <th><BulkSelectAll selection={bindingsSelection} label="cluster role bindings" /></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('clusterroles', 'name')}>Binding {sortMark('clusterroles', 'name')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('clusterroles', 'role_ref')}>Role Ref {sortMark('clusterroles', 'role_ref')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('clusterroles', 'subjects')}>Subjects {sortMark('clusterroles', 'subjects')}</button></th>
@@ -70,7 +113,8 @@ export function ClusterRolesPage({
             </thead>
             <tbody>
               {sortedClusterRoleBindings.map((item) => (
-                <tr key={item.name}>
+                <tr key={item.name} className={bindingsSelection.selectedKeySet.has(clusterResourceKey(item)) ? 'active-row' : ''}>
+                  <td><BulkRowSelect selection={bindingsSelection} item={item} itemKey={clusterResourceKey(item)} label={item.name} /></td>
                   <td>{item.name}</td>
                   <td>{item.role_ref}</td>
                   <td>{item.subjects}</td>
@@ -111,14 +155,31 @@ export function NamespacedRolesPage({
   deleteResourceByRef,
   refreshAll
 }) {
+  const rolesSelection = useBulkSelection(sortedRbacRoles, serviceAccountKey);
+  const bindingsSelection = useBulkSelection(sortedRoleBindings, serviceAccountKey);
   return (
     <div className="stacked-table-view">
       <section className="stacked-table-section">
-        <div className="small-label">Roles</div>
+        <div className="toolbar fixed-toolbar">
+          <div className="small-label">Roles</div>
+          <BulkSelectionCount selection={rolesSelection} />
+          {rolesSelection.count > 0 ? (
+            <BulkActionButton
+              selection={rolesSelection}
+              verb="Delete"
+              className="danger"
+              getPermission={(item) => permissionInfo('rbacroles', 'delete', item.namespace)}
+              runItem={(item) => deleteResourceByRef('role', item.namespace, item.name)}
+              refreshAll={refreshAll}
+              safe={safe}
+            />
+          ) : null}
+        </div>
         <div className="table-wrap stacked-table-wrap">
           <table>
             <thead>
               <tr>
+                <th><BulkSelectAll selection={rolesSelection} label="roles" /></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('rbacroles', 'name')}>Name {sortMark('rbacroles', 'name')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('rbacroles', 'namespace')}>Namespace {sortMark('rbacroles', 'namespace')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('rbacroles', 'rules')}>Rules {sortMark('rbacroles', 'rules')}</button></th>
@@ -128,7 +189,8 @@ export function NamespacedRolesPage({
             </thead>
             <tbody>
               {sortedRbacRoles.map((item) => (
-                <tr key={`${item.namespace}/${item.name}`}>
+                <tr key={serviceAccountKey(item)} className={rolesSelection.selectedKeySet.has(serviceAccountKey(item)) ? 'active-row' : ''}>
+                  <td><BulkRowSelect selection={rolesSelection} item={item} itemKey={serviceAccountKey(item)} label={`${item.namespace}/${item.name}`} /></td>
                   <td>{item.name}</td>
                   <td>{item.namespace}</td>
                   <td>{item.rules}</td>
@@ -153,11 +215,26 @@ export function NamespacedRolesPage({
       </section>
 
       <section className="stacked-table-section">
-        <div className="small-label">RoleBindings</div>
+        <div className="toolbar fixed-toolbar">
+          <div className="small-label">RoleBindings</div>
+          <BulkSelectionCount selection={bindingsSelection} />
+          {bindingsSelection.count > 0 ? (
+            <BulkActionButton
+              selection={bindingsSelection}
+              verb="Delete"
+              className="danger"
+              getPermission={(item) => permissionInfo('rbacroles', 'delete', item.namespace)}
+              runItem={(item) => deleteResourceByRef('rolebinding', item.namespace, item.name)}
+              refreshAll={refreshAll}
+              safe={safe}
+            />
+          ) : null}
+        </div>
         <div className="table-wrap stacked-table-wrap">
           <table>
             <thead>
               <tr>
+                <th><BulkSelectAll selection={bindingsSelection} label="role bindings" /></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('rbacroles', 'name')}>Binding {sortMark('rbacroles', 'name')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('rbacroles', 'namespace')}>Namespace {sortMark('rbacroles', 'namespace')}</button></th>
                 <th><button className="sort-btn" onClick={() => toggleSort('rbacroles', 'role_ref')}>Role Ref {sortMark('rbacroles', 'role_ref')}</button></th>
@@ -168,7 +245,8 @@ export function NamespacedRolesPage({
             </thead>
             <tbody>
               {sortedRoleBindings.map((item) => (
-                <tr key={`${item.namespace}/${item.name}`}>
+                <tr key={serviceAccountKey(item)} className={bindingsSelection.selectedKeySet.has(serviceAccountKey(item)) ? 'active-row' : ''}>
+                  <td><BulkRowSelect selection={bindingsSelection} item={item} itemKey={serviceAccountKey(item)} label={`${item.namespace}/${item.name}`} /></td>
                   <td>{item.name}</td>
                   <td>{item.namespace}</td>
                   <td>{item.role_ref}</td>
@@ -211,15 +289,29 @@ export function ServiceAccountsPage({
   deleteResourceByRef,
   refreshAll
 }) {
+  const selection = useBulkSelection(sortedServiceAccounts, serviceAccountKey);
   return (
     <>
     <div className="toolbar fixed-toolbar">
+      <BulkSelectionCount selection={selection} />
+      {selection.count > 0 ? (
+        <BulkActionButton
+          selection={selection}
+          verb="Delete"
+          className="danger"
+          getPermission={(item) => permissionInfo('serviceaccounts', 'delete', item.namespace)}
+          runItem={(item) => deleteResourceByRef('serviceaccount', item.namespace, item.name)}
+          refreshAll={refreshAll}
+          safe={safe}
+        />
+      ) : null}
       <input value={serviceAccountSearch} onChange={(e) => setServiceAccountSearch(e.target.value)} placeholder="Search service accounts..." />
     </div>
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
+            <th><BulkSelectAll selection={selection} label="service accounts" /></th>
             <th><button className="sort-btn" onClick={() => toggleSort('serviceaccounts', 'name')}>Name {sortMark('serviceaccounts', 'name')}</button></th>
             <th><button className="sort-btn" onClick={() => toggleSort('serviceaccounts', 'namespace')}>Namespace {sortMark('serviceaccounts', 'namespace')}</button></th>
             <th><button className="sort-btn" onClick={() => toggleSort('serviceaccounts', 'secrets')}>Secrets {sortMark('serviceaccounts', 'secrets')}</button></th>
@@ -229,7 +321,8 @@ export function ServiceAccountsPage({
         </thead>
         <tbody>
           {sortedServiceAccounts.map((item) => (
-            <tr key={`${item.namespace}/${item.name}`}>
+            <tr key={serviceAccountKey(item)} className={selection.selectedKeySet.has(serviceAccountKey(item)) ? 'active-row' : ''}>
+              <td><BulkRowSelect selection={selection} item={item} itemKey={serviceAccountKey(item)} label={`${item.namespace}/${item.name}`} /></td>
               <td>{item.name}</td>
               <td>{item.namespace}</td>
               <td>{item.secrets}</td>

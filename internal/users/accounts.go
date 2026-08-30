@@ -46,7 +46,7 @@ func (s *Store) Authenticate(ctx context.Context, token string) (*UserWithToken,
 			AuthSource:     "local",
 			SessionVersion: sessionVersion,
 		}
-	case "google", "oidc":
+	case "google", "oidc", "entra":
 		roleDef, ok := s.roleDefLocked(payload.Role)
 		if !ok {
 			return nil, sql.ErrNoRows
@@ -168,7 +168,7 @@ func (s *Store) CreateExternalSession(ctx context.Context, username, authSource 
 	if username == "" || authSource == "" {
 		return "", fmt.Errorf("external username and auth source are required")
 	}
-	if authSource != "google" && authSource != "oidc" {
+	if authSource != "google" && authSource != "oidc" && authSource != "entra" {
 		return "", fmt.Errorf("unsupported external auth source: %s", authSource)
 	}
 	s.mu.RLock()
@@ -390,6 +390,11 @@ func (s *Store) DeleteRole(ctx context.Context, name string) error {
 		for _, mapping := range s.oidcMappings {
 			if string(mapping.Role) == name {
 				return fmt.Errorf("role is assigned to OpenID Connect group mappings")
+			}
+		}
+		for _, mapping := range s.entraMappings {
+			if string(mapping.Role) == name {
+				return fmt.Errorf("role is assigned to Azure Entra ID group mappings")
 			}
 		}
 		delete(s.roles, name)

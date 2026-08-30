@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -368,7 +367,8 @@ func (s *Server) pvcs(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, fmt.Errorf("namespace is not allowed"))
 		return
 	}
-	items, err := s.kube.ListPVCs(r.Context(), nsList)
+	includeMetrics := r.URL.Query().Get("include_metrics") != "0"
+	items, err := s.kube.ListPVCs(r.Context(), nsList, includeMetrics)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -377,8 +377,9 @@ func (s *Server) pvcs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pvs(w http.ResponseWriter, r *http.Request) {
+	includeMetrics := r.URL.Query().Get("include_metrics") != "0"
 	writeClusterList(s, w, r, "pvs", func(ctx context.Context) ([]kube.PVInfo, error) {
-		return s.kube.ListPVs(ctx)
+		return s.kube.ListPVs(ctx, includeMetrics)
 	})
 }
 
@@ -390,8 +391,9 @@ func (s *Server) storageClasses(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	eventType := strings.TrimSpace(r.URL.Query().Get("type"))
 	writeNamespacedList(s, w, r, "events", func(ctx context.Context, ns string) ([]kube.EventInfo, error) {
-		return s.kube.ListEvents(ctx, ns, limit)
+		return s.kube.ListEventsByType(ctx, ns, limit, eventType)
 	}, func(a, b kube.EventInfo) bool {
 		return a.LastSeen > b.LastSeen
 	}, func(items []kube.EventInfo) []kube.EventInfo {
@@ -588,32 +590,12 @@ func (s *Server) podLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stream, err := s.kube.FollowPodLogs(r.Context(), ns, pod, container, tail)
+	stream, err := s.kube.FollowPodLogs(r.Context(), ns, pod, container, requestedFollowLogTail(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	defer stream.Close()
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeErr(w, http.StatusInternalServerError, fmt.Errorf("streaming unsupported"))
-		return
-	}
-
-	scanner := bufio.NewScanner(stream)
-	scanner.Buffer(make([]byte, 64*1024), maxLogStreamLineBytes)
-	for scanner.Scan() {
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", sanitizeSSE(scanner.Text()))
-		flusher.Flush()
-	}
-	if err := scanner.Err(); err != nil {
-		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", sanitizeSSE(err.Error()))
-		flusher.Flush()
-	}
+	serveLogStreams(w, r, []namedLogStream{{stream: stream}})
 }
 
 func (s *Server) workloadLogs(w http.ResponseWriter, r *http.Request) {
@@ -632,6 +614,24 @@ func (s *Server) workloadLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tail := requestedLogTail(r)
+	follow := strings.EqualFold(r.URL.Query().Get("follow"), "1") || strings.EqualFold(r.URL.Query().Get("follow"), "true")
+	if follow {
+		streams, err := s.kube.FollowWorkloadLogs(r.Context(), ns, kind, name, requestedFollowLogTail(r))
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		if len(streams) == 0 {
+			writeErr(w, http.StatusNotFound, fmt.Errorf("no pods found for %s/%s in namespace %s", kind, name, ns))
+			return
+		}
+		sources := make([]namedLogStream, 0, len(streams))
+		for _, stream := range streams {
+			sources = append(sources, namedLogStream{source: stream.Pod, stream: stream.Stream, err: stream.Error})
+		}
+		serveLogStreams(w, r, sources)
+		return
+	}
 	text, err := s.kube.WorkloadLogs(r.Context(), ns, kind, name, tail)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
@@ -650,6 +650,14 @@ func requestedLogTail(r *http.Request) int64 {
 		return maxLogTailLines
 	}
 	return tail
+}
+
+func requestedFollowLogTail(r *http.Request) int64 {
+	raw := strings.TrimSpace(r.URL.Query().Get("tail"))
+	if raw == "0" {
+		return 0
+	}
+	return requestedLogTail(r)
 }
 
 func (s *Server) namespaceFromQuery(r *http.Request) (string, bool) {
