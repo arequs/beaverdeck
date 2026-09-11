@@ -184,7 +184,7 @@ Generate a local user password hash with the BeaverDeck binary or image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.1 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.2 hash-password
 unset BDPASS
 ```
 

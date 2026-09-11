@@ -83,6 +83,7 @@ type BootstrapStatus struct {
 type Store struct {
 	db                *sql.DB
 	sessionSigningKey []byte
+	sessions          sync.Map
 	mu                sync.RWMutex
 	roles             map[string]RoleDef
 	users             map[string]ConfigUser

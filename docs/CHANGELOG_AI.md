@@ -1669,3 +1669,45 @@ scanner-based SSE route failed with `bufio.Scanner: token too long` on a single 
 ### Follow-ups
 
 - None.
+
+## 2026-09-11 — Revoke Sessions On Logout, Tab Close, And Refresh
+
+### Summary
+
+`POST /api/auth/logout` now actually revokes the session server-side instead of being a no-op, and the same
+revocation fires on tab close/`F5`/navigation via a `pagehide`-triggered `fetch(..., { keepalive: true })` call from
+the frontend. `Store` gained an in-memory `sessions sync.Map` (keyed by the token itself) checked in `Authenticate()`
+alongside the existing signature/`exp`/`session_version` checks, plus an hourly `StartSessionSweeper` background
+goroutine to bound its size. No sliding idle timeout was introduced; the only expiry is still the fixed 12h
+`sessionTokenTTL`, now with revocation as an additional rejection reason. Same behavior for the local, Google OAuth,
+OIDC (including Entra ID) providers.
+
+### Files changed
+
+- `internal/users/types.go`, `internal/users/session_tokens.go`, `internal/users/accounts.go`
+- `internal/api/auth_handlers.go`, `internal/api/auth_handlers_test.go`
+- `internal/users/session_lifecycle_test.go`
+- `cmd/server/main.go` (starts the session sweeper)
+- `ui/src/hooks/useAuthSession.js` (`pagehide` handler)
+- `openspec/specs/auth/session-lifecycle/spec.md` and the archived change under
+  `openspec/changes/archive/2026-09-11-tab-scoped-session-expiry/`
+- project memory files (`docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`)
+
+### Reason
+
+A token that once leaked (e.g. copied from the Network tab in DevTools) kept working against any API endpoint for up
+to 12h regardless of the user clicking "Log out", refreshing, or closing the tab, because `authLogout` was a no-op and
+the client only cleared local React state.
+
+### Validation
+
+- `go build ./...`, `go vet ./...`, `go test ./...`
+- Manual verification against a deployed image (not the dev server): log in, copy the token/username from DevTools
+  Network, refresh (login screen shown), then replay the same token via `curl` against `/api/namespaces` — confirmed
+  401. Full cycle also re-checked on a real cluster after rebuilding the frontend and rolling out the image: login →
+  use the UI → close the tab → reopening shows the login screen → the old token is rejected via `curl`. Confirmed by
+  the project owner.
+
+### Follow-ups
+
+- None.

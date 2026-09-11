@@ -2,29 +2,17 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool
 type: application
-version: 2.2.6
-appVersion: "1.6.1"
+version: 2.2.7
+appVersion: "1.6.2"
 home: https://beaverdeck.io
 sources:
   - https://github.com/arequs/beaverdeck
 icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.png
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: "Added an RBAC-scoped Dashboard as the default post-login view with health, capacity, readiness, event, inventory, and Insights charts."
-    - kind: changed
-      description: "Dashboard panels now load progressively, and allowed Insights categories share one Kubernetes resource scan for faster multi-namespace views."
-    - kind: changed
-      description: "Grouped Insight results by check type with compact affected-resource rows."
-    - kind: changed
-      description: "Replaced the native Apply YAML template selector with a BeaverDeck-styled picker."
-    - kind: changed
-      description: "Added RBAC-aware bulk actions across supported resource tables and a reconnect action for interrupted Pod Exec sessions."
-    - kind: changed
-      description: "Moved Pod and Workload Follow to bounded authenticated live streams that retain logs while autoscroll is paused and safely handle oversized lines."
+    - kind: security
+      description: "Session tokens are now tracked server-side and revoked immediately on logout, tab close, or page refresh, instead of only clearing client-side state."
     - kind: fixed
-      description: "Separated generic OIDC and Azure Entra ID configuration, mappings, and login flows so both can be enabled simultaneously."
-    - kind: fixed
-      description: "Corrected all-passing Dashboard Insight scores and ordering of modern Kubernetes Events that use eventTime."
-    - kind: fixed
-      description: "Kept Restart Diagnostics within a fixed-width modal and retained delayed pre-incident Metrics API samples."
+      description: "POST /api/auth/logout no longer a no-op; a copied or leaked token stops working as soon as the user logs out, refreshes, or closes the tab."
+    - kind: changed
+      description: "Added a pagehide handler that notifies the server via a keepalive request when a tab is closed, refreshed, or navigated away from."
