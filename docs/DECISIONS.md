@@ -626,3 +626,46 @@ Follow holds one Kubernetes log stream per selected Pod instead of repeatedly do
 very long line cannot terminate the server reader or grow the browser buffer without limit. Workload Follow may hold
 one upstream connection for each matching Pod; switching away from the log tab closes those streams. Non-Follow
 refresh and older-history loading continue to use bounded snapshots.
+
+## 2026-09-11 — Revoke Sessions On Logout, Tab Close, And Refresh
+
+### Context
+
+A session token stayed valid for the full fixed `sessionTokenTTL` (12h) regardless of what the UI showed: `authLogout`
+was a no-op, and closing the tab, refreshing, or clicking "Log out" only cleared client-side React state. A token
+copied from the Network tab in DevTools kept working against any API endpoint for up to 12h after the UI claimed the
+session was over. Extends the in-memory-only token model from "Login Tokens Are In-Memory Only" (2026-06-17) rather
+than replacing it.
+
+### Decision
+
+Add a `sessions sync.Map` (token string -> `sessionRecord{expiresAt, revoked atomic.Bool}`) to `Store`, keyed by the
+token itself rather than a separate `sid`, so the existing signed-token format is unchanged. `Authenticate()` rejects
+a token whose session record is missing or revoked, in addition to the existing signature/`exp`/`session_version`
+checks. `authLogout` now genuinely revokes the presented session (parsed from the `Authorization` header, since
+`/api/auth/*` bypasses `auth.Middleware`); an already-invalid token is a quiet success. The frontend keeps the token
+in React state only (no `sessionStorage`) and additionally sends a best-effort
+`fetch('/api/auth/logout', { keepalive: true })` on the `pagehide` event (not `beforeunload` or `visibilitychange`),
+so logout, `F5`, and tab close all revoke the token the same way. A background `StartSessionSweeper` goroutine
+(hourly, modeled on the `restart_diagnostics.go` sampling loop) deletes revoked/expired records so the map stays
+bounded. Same mechanism for every `authSource`: local, Google OAuth, OIDC (including Entra ID).
+Deliberately not introduced: a sliding idle timeout, and federated/global logout at the external provider — see
+`openspec/specs/auth/session-lifecycle/spec.md` and the archived change's `design.md` for the full rationale,
+including the accepted same-wall-clock-second token-collision limitation from keying sessions by the token itself.
+
+### Rationale
+
+Keying by the token itself (post signature-validation) avoids widening the token format or adding a new field, and
+`fetch(keepalive: true)` (over `sendBeacon`) is the only option that supports the `Authorization` header, letting both
+client call sites (the button and `pagehide`) share one code path. A `sync.Map` with an atomic `revoked` flag avoids
+contending with `Store.mu`, which already serializes rarer config/user/role reads and writes.
+
+### Consequences
+
+"Log out", `F5`, and closing the tab now end the server-side session immediately, not just the client view of it. A
+token leaked once (e.g. via DevTools) is only usable until the owning tab's session ends the same way the UI implies,
+rather than for up to 12h regardless. Sessions still do not survive a pod restart (in-memory only, unchanged) and are
+still not synchronized across replicas (`replicas: 1` is pinned). Two logins for the same user completing within the
+same wall-clock second could in rare cases collide onto one session record; this is an accepted, documented
+limitation, not a regression introduced silently. There is still no sliding idle timeout — an open, unused tab stays
+valid for the full 12h `sessionTokenTTL`.
