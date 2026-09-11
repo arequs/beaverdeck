@@ -305,6 +305,27 @@ export default function useAuthSession({
   }, [setNamespaces, setSelectedNamespaces, setThemePreference]);
 
   useEffect(() => {
+    const handlePageHide = () => {
+      if (!token) {
+        return;
+      }
+
+      fetch(withBasePath('/api/auth/logout'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        // Indicates that the browser will keep the associated request alive if the page is unloaded before the request is complete
+        keepalive: true
+      }).catch(() => {
+        // Without it, a failed request logs an unhandled promise rejection.
+      });
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [token]);
+
+  useEffect(() => {
     const handleAuthExpired = (event) => {
       const message = event?.detail?.message || 'Session expired. Please sign in again.';
       void logout({ revokeRemote: false, reason: message });

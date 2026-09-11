@@ -63,6 +63,10 @@ func (s *Store) Authenticate(ctx context.Context, token string) (*UserWithToken,
 	default:
 		return nil, sql.ErrNoRows
 	}
+
+	if rec, ok := s.findSession(token); !ok || rec.revoked.Load() {
+		return nil, sql.ErrNoRows
+	}
 	if len(user.Permissions) == 0 {
 		user.Permissions = json.RawMessage(`{}`)
 	}
@@ -158,7 +162,7 @@ func (s *Store) CreateSession(ctx context.Context, username, authSource string) 
 	}
 	role := cfgUser.Role
 	s.mu.RUnlock()
-	return s.newSessionToken(username, authSource, role, sessionVersion)
+	return s.issueSessionToken(username, authSource, role, sessionVersion)
 }
 
 func (s *Store) CreateExternalSession(ctx context.Context, username, authSource string, role Role) (string, error) {
@@ -177,7 +181,18 @@ func (s *Store) CreateExternalSession(ctx context.Context, username, authSource 
 	if !ok {
 		return "", fmt.Errorf("role does not exist: %s", role)
 	}
-	return s.newSessionToken(username, authSource, role, 1)
+	return s.issueSessionToken(username, authSource, role, 1)
+}
+
+func (s *Store) issueSessionToken(username, authSource string, role Role, sessionVersion int64) (string, error) {
+	token, expiresAt, err := s.newSessionToken(username, authSource, role, sessionVersion)
+
+	if err != nil {
+		return "", err
+	}
+
+	s.createSession(token, expiresAt)
+	return token, nil
 }
 
 func (s *Store) List(ctx context.Context) ([]User, error) {

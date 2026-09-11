@@ -108,6 +108,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	userStore.StartSessionSweeper(ctx)
 	kc.StartRestartDiagnostics(ctx, kube.RestartDiagnosticsOptions{
 		Enabled:                 cfg.RestartDiagnosticsEnabled,
 		Namespace:               diagnosticNamespace(cfg),

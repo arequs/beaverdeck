@@ -1,6 +1,7 @@
 package users
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
@@ -8,13 +9,78 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	sessionTokenPrefix = "bdkst1"
-	sessionTokenTTL    = 12 * time.Hour
+	sessionTokenPrefix   = "bdkst1"
+	sessionTokenTTL      = 12 * time.Hour
+	sessionSweepInterval = time.Hour
 )
+
+type sessionRecord struct {
+	expiresAt time.Time
+	revoked   atomic.Bool
+}
+
+func (s *Store) createSession(token string, expiresAt time.Time) {
+	s.sessions.Store(token, &sessionRecord{expiresAt: expiresAt})
+}
+
+func (s *Store) findSession(token string) (*sessionRecord, bool) {
+	v, ok := s.sessions.Load(token)
+
+	if !ok {
+		return nil, false
+	}
+
+	return v.(*sessionRecord), true
+}
+
+func (s *Store) revokeSession(token string) {
+	if rec, ok := s.findSession(token); ok {
+		rec.revoked.Store(true)
+	}
+}
+
+func (s *Store) Logout(token string) error {
+	if _, err := s.parseSessionToken(token); err != nil {
+		return nil
+	}
+
+	s.revokeSession(token)
+	return nil
+}
+
+func (s *Store) sweepSessions(now time.Time) {
+	s.sessions.Range(func(key, value any) bool {
+		rec, ok := value.(*sessionRecord)
+
+		if !ok || rec.revoked.Load() || !now.Before(rec.expiresAt) {
+			s.sessions.Delete(key)
+		}
+
+		return true
+	})
+}
+
+// Periodically clears out stale session records in the background
+func (s *Store) StartSessionSweeper(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(sessionSweepInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.sweepSessions(time.Now().UTC())
+			}
+		}
+	}()
+}
 
 type sessionTokenPayload struct {
 	Username       string `json:"username"`
@@ -25,29 +91,31 @@ type sessionTokenPayload struct {
 	ExpiresAt      int64  `json:"exp"`
 }
 
-func (s *Store) newSessionToken(username, authSource string, role Role, sessionVersion int64) (string, error) {
+func (s *Store) newSessionToken(username, authSource string, role Role, sessionVersion int64) (token string, expiresAt time.Time, err error) {
 	if len(s.sessionSigningKey) == 0 {
-		return "", fmt.Errorf("session signing key is not configured")
+		return "", time.Time{}, fmt.Errorf("session signing key is not configured")
 	}
 	now := time.Now().UTC()
+	expiresAt = now.Add(sessionTokenTTL)
 	payload := sessionTokenPayload{
 		Username:       strings.TrimSpace(username),
 		AuthSource:     strings.TrimSpace(strings.ToLower(authSource)),
 		Role:           Role(strings.TrimSpace(strings.ToLower(string(role)))),
 		SessionVersion: sessionVersion,
 		IssuedAt:       now.Unix(),
-		ExpiresAt:      now.Add(sessionTokenTTL).Unix(),
+		ExpiresAt:      expiresAt.Unix(),
 	}
 	if payload.Username == "" || payload.AuthSource == "" || payload.Role == "" {
-		return "", fmt.Errorf("session token payload is incomplete")
+		return "", time.Time{}, fmt.Errorf("session token payload is incomplete")
 	}
 	payloadData, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	encodedPayload := base64.RawURLEncoding.EncodeToString(payloadData)
 	sig := s.signSessionPayload(encodedPayload)
-	return sessionTokenPrefix + "." + encodedPayload + "." + base64.RawURLEncoding.EncodeToString(sig), nil
+	token = sessionTokenPrefix + "." + encodedPayload + "." + base64.RawURLEncoding.EncodeToString(sig)
+	return token, expiresAt, nil
 }
 
 func (s *Store) parseSessionToken(token string) (sessionTokenPayload, error) {

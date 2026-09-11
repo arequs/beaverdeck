@@ -133,7 +133,18 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
+	s.users.Logout(logoutTokenFromRequest(r))
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func logoutTokenFromRequest(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+
+	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return strings.TrimSpace(authHeader[len("Bearer "):])
+	}
+
+	return ""
 }
 
 func (s *Server) authGoogleStart(w http.ResponseWriter, r *http.Request) {
