@@ -50,8 +50,6 @@ spec:
               value: {{ ternary .Values.ingress.path "/" .Values.ingress.enabled | quote }}
             - name: DATA_DIR
               value: {{ .Values.dataDir | quote }}
-            - name: APP_VERSION
-              value: {{ .Values.image.tag | quote }}
             - name: CLUSTER_NAME
               value: {{ .Values.clusterName | quote }}
             - name: POD_NAMESPACE

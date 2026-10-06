@@ -12,7 +12,10 @@ import (
 
 	"beaverdeck/internal/config"
 	"beaverdeck/internal/users"
+	"beaverdeck/internal/version"
 )
+
+const endpoint = "https://beaverdeck.io/update-check"
 
 type requestPayload struct {
 	AppVersion string `json:"appVersion"`
@@ -23,9 +26,6 @@ type responsePayload struct {
 }
 
 func Start(ctx context.Context, cfg config.Config, userStore *users.Store) {
-	if strings.TrimSpace(cfg.UpdateCheckURL) == "" || strings.TrimSpace(cfg.AppVersion) == "" {
-		return
-	}
 	go loop(ctx, cfg, userStore)
 }
 
@@ -38,30 +38,34 @@ func loop(ctx context.Context, cfg config.Config, userStore *users.Store) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			_ = runOnce(ctx, cfg, userStore)
+			_ = runOnce(ctx, userStore)
 			timer.Reset(nextDelay(cfg))
 		}
 	}
 }
 
-func runOnce(ctx context.Context, cfg config.Config, userStore *users.Store) error {
+func runOnce(ctx context.Context, userStore *users.Store) error {
+	return runOnceWith(ctx, userStore, endpoint, &http.Client{Timeout: 5 * time.Second})
+}
+
+func runOnceWith(ctx context.Context, userStore *users.Store, requestURL string, client *http.Client) error {
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	payload, err := json.Marshal(requestPayload{
-		AppVersion: strings.TrimSpace(cfg.AppVersion),
+		AppVersion: version.Current,
 	})
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, cfg.UpdateCheckURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, requestURL, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"beaverdeck/internal/auth"
 	"beaverdeck/internal/config"
 	"beaverdeck/internal/users"
+	"beaverdeck/internal/version"
 )
 
 func TestAuthProvidersExposeOIDCAndEntraIndependently(t *testing.T) {
@@ -42,7 +43,7 @@ func TestAuthProvidersExposeOIDCAndEntraIndependently(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := New(config.Config{AppVersion: "test"}, nil, store, embed.FS{})
+	server := New(config.Config{}, nil, store, embed.FS{})
 	request := httptest.NewRequest(http.MethodGet, "/api/auth/providers", nil)
 	response := httptest.NewRecorder()
 	server.Routes().ServeHTTP(response, request)
@@ -50,7 +51,8 @@ func TestAuthProvidersExposeOIDCAndEntraIndependently(t *testing.T) {
 		t.Fatalf("returned status %d: %s", response.Code, response.Body.String())
 	}
 	var payload struct {
-		OIDC struct {
+		AppVersion string `json:"appVersion"`
+		OIDC       struct {
 			Enabled      bool   `json:"enabled"`
 			ProviderName string `json:"provider_name"`
 		} `json:"oidc"`
@@ -61,6 +63,9 @@ func TestAuthProvidersExposeOIDCAndEntraIndependently(t *testing.T) {
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
+	}
+	if payload.AppVersion != version.Current {
+		t.Fatalf("appVersion = %q, want %q", payload.AppVersion, version.Current)
 	}
 	if !payload.OIDC.Enabled || payload.OIDC.ProviderName != "Corporate OIDC" {
 		t.Fatalf("unexpected OIDC provider: %#v", payload.OIDC)
@@ -85,7 +90,7 @@ func TestAuthLogoutRevokesTokenForSubsequentAuthenticatedRequests(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	server := New(config.Config{AppVersion: "test"}, nil, store, embed.FS{})
+	server := New(config.Config{}, nil, store, embed.FS{})
 	routes := server.Routes()
 	secured := auth.Middleware(store)(routes)
 
@@ -123,7 +128,7 @@ func TestAuthLogoutWithAlreadyInvalidTokenIsSilentSuccess(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(config.Config{AppVersion: "test"}, nil, store, embed.FS{})
+	server := New(config.Config{}, nil, store, embed.FS{})
 	routes := server.Routes()
 
 	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
@@ -150,7 +155,7 @@ func TestAuthLogoutIgnoresTokenInFormBodyOnlyHeaderIsHonored(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := New(config.Config{AppVersion: "test"}, nil, store, embed.FS{})
+	server := New(config.Config{}, nil, store, embed.FS{})
 	routes := server.Routes()
 	secured := auth.Middleware(store)(routes)
 

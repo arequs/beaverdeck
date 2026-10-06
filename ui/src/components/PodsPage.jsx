@@ -236,7 +236,12 @@ export default function PodsPage({
                           className="pod-icon-button"
                           aria-label="Open pod logs"
                           disabled={!logsActionPermission.allowed}
-                          onClick={() => safe(() => openPodLogsTab(p.namespace, p.name, '', p.containers))}
+                          onClick={() => safe(() => openPodLogsTab(
+                            p.namespace,
+                            p.name,
+                            p.default_log_container,
+                            p.log_containers || p.containers
+                          ))}
                         >
                           <Logs className="pod-action-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
                         </button>

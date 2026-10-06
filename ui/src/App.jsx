@@ -309,6 +309,7 @@ export default function App() {
 
   const [podSearch, setPodSearch] = useState('');
   const [workloadSearch, setWorkloadSearch] = useState('');
+  const [eventSearch, setEventSearch] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
   const [ingressSearch, setIngressSearch] = useState('');
   const [serviceAccountSearch, setServiceAccountSearch] = useState('');
@@ -1066,7 +1067,11 @@ export default function App() {
     return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [nodes, parsedNodeLabelFilter.key]);
   const sortedNodes = useMemo(() => getSorted('nodes', filteredNodes), [filteredNodes, sortByNav]);
-  const sortedEvents = useMemo(() => getSorted('events', events), [events, sortByNav]);
+  const filteredEvents = useMemo(
+    () => filterRowsByQuery(events, eventSearch, ['last_seen', 'namespace', 'type', 'reason', 'object', 'message', 'count']),
+    [events, eventSearch]
+  );
+  const sortedEvents = useMemo(() => getSorted('events', filteredEvents), [filteredEvents, sortByNav]);
   const availableInsightTypes = useMemo(() => {
     const seen = new Map();
     insights.forEach((item) => {
@@ -2372,9 +2377,11 @@ export default function App() {
   function openPodLogsTab(namespace, podName, container = '', containers = []) {
     const knownPod = pods.find((item) => item.namespace === namespace && item.name === podName);
     const containerOptions = normalizeContainerNames(
-      Array.isArray(containers) && containers.length > 0 ? containers : knownPod?.containers
+      Array.isArray(containers) && containers.length > 0
+        ? containers
+        : (knownPod?.log_containers || knownPod?.containers)
     );
-    const selectedContainer = String(container || containerOptions[0] || '').trim();
+    const selectedContainer = String(container || knownPod?.default_log_container || containerOptions[0] || '').trim();
     const id = `logs:pod:${namespace}:${podName}`;
     const title = `Logs Pod/${podName}`;
     const existing = bottomTabsRef.current.find((item) => item.id === id);
@@ -3590,7 +3597,13 @@ export default function App() {
             />
           )}
 
-          {activeNav === 'events' && <EventsPage sortedEvents={sortedEvents} />}
+          {activeNav === 'events' && (
+            <EventsPage
+              eventSearch={eventSearch}
+              setEventSearch={setEventSearch}
+              sortedEvents={sortedEvents}
+            />
+          )}
 
           {isInsightsView && (
             <InsightsPage

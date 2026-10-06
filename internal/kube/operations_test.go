@@ -57,6 +57,37 @@ func TestWorkloadPodsUsesSelectorAndSortsMatches(t *testing.T) {
 	}
 }
 
+func TestDefaultPodContainerSelectsFailingInitContainer(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "demo"},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{{Name: "setup"}},
+			Containers:     []corev1.Container{{Name: "app"}},
+		},
+		Status: corev1.PodStatus{InitContainerStatuses: []corev1.ContainerStatus{{
+			Name:  "setup",
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+		}}},
+	}
+	client := &Client{core: fake.NewSimpleClientset(pod)}
+
+	container, err := client.defaultPodContainer(context.Background(), "apps", "demo", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if container != "setup" {
+		t.Fatalf("default container = %q, want setup", container)
+	}
+
+	container, err = client.defaultPodContainer(context.Background(), "apps", "demo", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if container != "app" {
+		t.Fatalf("explicit container = %q, want app", container)
+	}
+}
+
 func testSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

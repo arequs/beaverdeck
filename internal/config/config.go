@@ -11,7 +11,6 @@ type Config struct {
 	ListenAddr                      string
 	BasePath                        string
 	DataDir                         string
-	AppVersion                      string
 	ClusterName                     string
 	PodNamespace                    string
 	ServiceAccountName              string
@@ -23,7 +22,6 @@ type Config struct {
 	SuppressedInsightsConfigMapKey  string
 	SuppressedInsightsConfigMapNS   string
 	AllowAllNamespaces              bool
-	UpdateCheckURL                  string
 	UpdateCheckEvery                time.Duration
 	UpdateCheckJitter               time.Duration
 	RestartDiagnosticsEnabled       bool
@@ -40,7 +38,6 @@ func FromEnv() Config {
 		ListenAddr:                      env("LISTEN_ADDR", ":8080"),
 		BasePath:                        normalizeBasePath(env("BASE_PATH", "")),
 		DataDir:                         env("DATA_DIR", "/data"),
-		AppVersion:                      env("APP_VERSION", ""),
 		ClusterName:                     env("CLUSTER_NAME", ""),
 		PodNamespace:                    env("POD_NAMESPACE", "default"),
 		ServiceAccountName:              env("SERVICE_ACCOUNT_NAME", "default"),
@@ -51,7 +48,6 @@ func FromEnv() Config {
 		SuppressedInsightsConfigMapName: env("SUPPRESSED_INSIGHTS_CONFIGMAP_NAME", "beaverdeck-suppressed-insights"),
 		SuppressedInsightsConfigMapKey:  env("SUPPRESSED_INSIGHTS_CONFIGMAP_KEY", "suppressed_insights.json"),
 		SuppressedInsightsConfigMapNS:   env("SUPPRESSED_INSIGHTS_CONFIGMAP_NAMESPACE", env("POD_NAMESPACE", "default")),
-		UpdateCheckURL:                  env("UPDATE_CHECK_URL", "https://arequs.com/update-check"),
 	}
 
 	allowAll, _ := strconv.ParseBool(env("ALLOW_ALL_NAMESPACES", "false"))

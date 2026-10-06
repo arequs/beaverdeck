@@ -1,5 +1,40 @@
 # AI Change Log
 
+## 2026-10-06 — Prepare BeaverDeck 1.6.3 And Helm Chart 2.2.8
+
+### Summary
+
+Moved runtime application version reporting to `internal/version.Current`, fixed the update-check endpoint at
+`https://beaverdeck.io/update-check`, and removed `APP_VERSION` plus `UPDATE_CHECK_URL` runtime coupling. Added Event
+search and Warning/Error colors. Pod logs now include init containers and default to the active or failing init
+container without changing the regular-container list used by Exec. Synchronized release metadata and updated
+`source-map-js` to `1.2.2`.
+
+### Files changed
+
+- runtime version, update-check, API metadata, Kubernetes pod/log helpers, and regression tests under `internal/`
+- Events and Pod logs UI plus rebuilt assets under `ui/src/` and `cmd/server/web/dist/`
+- Helm chart metadata, values, Deployment, README, root README, OpenAPI, and `docs/changelog/1.6.3.md`
+- local project memory files
+
+### Reason
+
+The binary version must not depend on a deployment tag, update checks must use the official BeaverDeck endpoint,
+operators need searchable severity-aware Events, and init failures must remain diagnosable before app containers run.
+
+### Validation
+
+- focused and full `go test ./...`
+- `go vet ./...` and `go mod verify`
+- `npm run build` as `beaverdeck-ui@1.6.3`
+- `npm audit` reports zero vulnerabilities after the transitive patch
+- `helm lint --strict` and full `helm template` render for chart `2.2.8` / app `1.6.3`
+- `git diff --check`
+
+### Follow-ups
+
+- Publish the `1.6.3` image and `2.2.8` chart after review.
+
 ## 2026-09-09 - Protect In-Cluster Cloud Session Secret
 
 Cloud session Secret metadata is hidden from the Secrets listing and it cannot be read, edited, or deleted through normal manifest/resource APIs. Incident normalizer redaction now explicitly covers AWS credential patterns.

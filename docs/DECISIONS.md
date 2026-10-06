@@ -1,5 +1,29 @@
 # Technical Decisions
 
+## 2026-10-06 — Compile Runtime Version And Keep Update Checks Official
+
+### Context
+
+The running application took its reported version from Helm's image tag through `APP_VERSION`, while the update
+endpoint remained overridable through `UPDATE_CHECK_URL` and still defaulted to the former Arequs host.
+
+### Decision
+
+Keep the release version as the Go constant `internal/version.Current` and use it for public auth metadata,
+`/api/me`, and update-check requests. Always send update checks to `https://beaverdeck.io/update-check`. Remove both
+runtime configuration fields and the Helm `APP_VERSION` injection. Retain chart `appVersion` and `image.tag` only for
+Kubernetes metadata and image selection.
+
+### Rationale
+
+The binary must report the version it was built with even when an operator uses a custom image tag. A fixed official
+endpoint avoids configuration drift and follows the one-server product architecture.
+
+### Consequences
+
+Changing runtime application version requires a code release. Helm image-tag overrides no longer change the version
+shown by the UI or sent to update checks, and update checks cannot be redirected through environment configuration.
+
 ## 2026-09-09 - Send AI Incidents Through the In-Cluster Backend
 
 The React UI never sends diagnostic data directly to a cloud model provider. The local Go backend reads the existing restart snapshot, emits a bounded redacted DTO, and forwards it only to BeaverDeck Cloud.

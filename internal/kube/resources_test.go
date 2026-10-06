@@ -36,6 +36,38 @@ func TestPodDisplayStatusUsesContainerFailureReason(t *testing.T) {
 	}
 }
 
+func TestPodLogContainersIncludeInitAndDefaultToFailingInit(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{{Name: "setup"}, {Name: "migrate"}},
+			Containers:     []corev1.Container{{Name: "app"}, {Name: "sidecar"}},
+		},
+		Status: corev1.PodStatus{InitContainerStatuses: []corev1.ContainerStatus{
+			{Name: "setup", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}},
+			{Name: "migrate", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}},
+		}},
+	}
+
+	got := podLogContainerNames(pod)
+	want := []string{"app", "sidecar", "setup", "migrate"}
+	if len(got) != len(want) {
+		t.Fatalf("log containers = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("log containers = %#v, want %#v", got, want)
+		}
+	}
+	if got := podDefaultLogContainer(pod); got != "migrate" {
+		t.Fatalf("default log container = %q, want failing init container", got)
+	}
+
+	pod.Status.InitContainerStatuses[1].State = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}
+	if got := podDefaultLogContainer(pod); got != "app" {
+		t.Fatalf("default log container = %q, want first regular container", got)
+	}
+}
+
 func TestListEventsPreservesInvolvedObjectUID(t *testing.T) {
 	client := &Client{core: fake.NewSimpleClientset(&corev1.Event{
 		ObjectMeta:     metav1.ObjectMeta{Namespace: "apps", Name: "oom"},

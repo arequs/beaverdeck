@@ -8,6 +8,7 @@ import (
 
 	"beaverdeck/internal/auth"
 	"beaverdeck/internal/users"
+	"beaverdeck/internal/version"
 )
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +33,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		"authSource":    u.AuthSource,
 		"permissions":   u.Permissions,
 		"clusterName":   s.cfg.ClusterName,
-		"appVersion":    s.cfg.AppVersion,
+		"appVersion":    version.Current,
 		"latestVersion": updateStatus.LatestVersion,
 	})
 }

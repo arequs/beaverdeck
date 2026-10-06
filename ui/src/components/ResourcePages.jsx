@@ -15,8 +15,31 @@ function clusterResourceKey(item) {
   return item.name;
 }
 
-export function EventsPage({ sortedEvents }) {
-  return <pre className="mono-block">{sortedEvents.map((e) => `${e.last_seen} ns=${e.namespace} ${e.type} ${e.reason} ${e.object}\n${e.message}`).join('\n\n')}</pre>;
+export function EventsPage({ eventSearch, setEventSearch, sortedEvents }) {
+  return (
+    <>
+      <div className="toolbar fixed-toolbar">
+        <input value={eventSearch} onChange={(e) => setEventSearch(e.target.value)} placeholder="Search events..." />
+      </div>
+      <div className="mono-block events-block">
+        {sortedEvents.map((event, index) => {
+          const eventType = String(event.type || '').trim().toLowerCase();
+          const severityClass = eventType === 'error'
+            ? 'log-line-error'
+            : (eventType === 'warning' ? 'log-line-warn' : '');
+          return (
+            <div
+              key={`${event.namespace}/${event.object}/${event.reason}/${event.last_seen}/${index}`}
+              className={`event-entry ${severityClass}`.trim()}
+            >
+              <div>{`${event.last_seen} ns=${event.namespace} ${event.type} ${event.reason} ${event.object}`}</div>
+              <div>{event.message}</div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
 }
 
 export function ServicesPage({

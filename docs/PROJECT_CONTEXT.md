@@ -1,8 +1,10 @@
 # Project Context
 
-## 1.7.0 Cloud AI Analysis
+## Current Main Release
 
-Restart diagnostics can be sent to the separately hosted BeaverDeck Cloud service when `CLOUD_API_URL` is configured. The customer cluster stores only its cloud session in `beaverdeck-cloud-session`; it never receives OpenAI or Stripe secrets.
+BeaverDeck `1.6.3` with Helm chart `2.2.8` is prepared on `main`. Runtime version reporting comes from
+`internal/version.Current`; Helm `appVersion` and `image.tag` are packaging metadata only. Update checks always POST
+that compiled version to `https://beaverdeck.io/update-check` and have no endpoint or version environment override.
 
 ## Purpose
 
@@ -21,6 +23,7 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 - `internal/kube/` wraps Kubernetes access for resources, metrics, insights, manifests, logs, exec, auth config Secret storage, and suppressed Insight ConfigMap storage.
 - `internal/users/` manages in-memory auth runtime state, local users, roles, password hashes, OAuth/OIDC config, group mappings, config snapshot import/export, and non-auth SQLite app state.
 - `internal/updatecheck/` handles update-check metadata.
+- `internal/version/` is the single runtime source of the BeaverDeck application version.
 - `ui/src/` contains the React application.
 - `charts/beaverdeck/` contains the Helm chart.
 - Insights are split into Nodes, Workloads, GPU, Networking, Storage, Security, and Configuration sections. There is no separate Capacity Insights section; pod resource checks live under Workloads and node resource checks live under Nodes.
@@ -62,7 +65,7 @@ Auth/config flow:
 
 ## Runtime & Environments
 
-- Prepared release baseline: BeaverDeck `1.6.1`, Helm chart `2.2.6`, default image tag `1.6.1`.
+- Prepared release baseline: BeaverDeck `1.6.3`, Helm chart `2.2.8`, default image tag `1.6.3`.
 - Runtime mode is in-cluster only in the application entrypoint; it calls `kube.InCluster()`.
 - HTTP listens on `LISTEN_ADDR`, default `:8080`.
 - `BASE_PATH` supports non-root ingress paths.
@@ -75,6 +78,8 @@ Auth/config flow:
 - The backend reads Argo CD `applications.argoproj.io/v1alpha1` custom resources through the dynamic Kubernetes client. It exposes sync and health status, source/destination summaries, deployment history, and Manage-only source configuration plus current created-resource inventory. A missing Argo CD CRD produces an empty list rather than making BeaverDeck fail.
 - Restart Diagnostics starts sampling only after the initial Pod informer cache is synchronized, derives a user-facing Pod status from Pod and container state reasons, and stores one latest Secret per exact Pod rather than per container. Snapshots include T-3m/T-1m/T-30s/T-10s jitter-tolerant metrics, all containers' previous logs, node usage/capacity, and PVC/PV metadata and events. Existing workload/container-scoped diagnostic Secrets are consolidated on startup; after every successfully stored incident, Secrets for missing or UID-replaced pods are removed while the current incident is retained.
 - Restart Diagnostics keeps its title, workload/container/timestamp subtitle, and close action outside the modal scroll area. Pod and Workload yellow event indicators query only Kubernetes events; Workloads include direct object events and related pod events when the user's permissions allow pod discovery.
+- Events has a client-side search over all displayed fields and uses the same log colors as Pod logs: Warning yellow, Error red, and normal text otherwise.
+- Pod inventory exposes regular containers separately for Exec and regular plus init containers for logs. Log requests with no explicit container prefer an active/failing init container, then the first regular container.
 - Applications permissions are `none`, `view`, and `edit` (shown as Manage) and cover Helm, Argo CD, and future application sources such as Flux. New roles and legacy roles without the field normalize Applications to None; access must be granted explicitly.
 - Apply YAML includes separate sample Widget CRD and Widget custom-resource templates. Apply the CRD first and its instance second so Kubernetes discovery can register the new API before the instance is submitted.
 - Apply YAML uses an application-themed, portal-rendered template picker instead of a native HTML select so the open template list follows BeaverDeck colors, spacing, focus, and selected-state styling in both themes.
@@ -100,7 +105,6 @@ Environment variables read by `internal/config`:
 - `LISTEN_ADDR`: HTTP listen address.
 - `BASE_PATH`: optional base path for ingress path prefixes.
 - `DATA_DIR`: local data directory for non-auth runtime metadata.
-- `APP_VERSION`: app version reported by the server/update check.
 - `CLUSTER_NAME`: cluster label shown in the UI.
 - `POD_NAMESPACE`: current pod namespace.
 - `SERVICE_ACCOUNT_NAME`: service account name.
@@ -112,7 +116,6 @@ Environment variables read by `internal/config`:
 - `SUPPRESSED_INSIGHTS_CONFIGMAP_NAME`: ConfigMap name for globally suppressed Insight checks.
 - `SUPPRESSED_INSIGHTS_CONFIGMAP_KEY`: ConfigMap key for suppressed Insight JSON array.
 - `SUPPRESSED_INSIGHTS_CONFIGMAP_NAMESPACE`: ConfigMap namespace, default `POD_NAMESPACE`.
-- `UPDATE_CHECK_URL`: update-check endpoint.
 - `UPDATE_CHECK_INTERVAL_HOURS`: update-check interval.
 - `UPDATE_CHECK_JITTER_MINUTES`: update-check jitter.
 - `RESTART_DIAGNOSTICS_ENABLED`: enable Kubernetes-native restart/eviction incident capture, default `true`.
@@ -122,6 +125,9 @@ Environment variables read by `internal/config`:
 - `RESTART_DIAGNOSTICS_MAX_LOG_BYTES_PER_CONTAINER`: previous-log byte cap per container, default `32768`.
 - `RESTART_DIAGNOSTICS_MAX_TOTAL_LOG_BYTES`: total previous-log byte cap per incident, default `131072`.
 - `RESTART_DIAGNOSTICS_MAX_EVENTS`: relevant event cap per incident, default `20`.
+
+Application version and update endpoint are intentionally not runtime configuration. The version is compiled from
+`internal/version.Current`; the official update endpoint is `https://beaverdeck.io/update-check`.
 
 Secret/config notes:
 
@@ -155,7 +161,7 @@ Secret/config notes:
 - Go tests are run with `go test ./...`.
 - Helm rendering can be checked with `helm template beaverdeck charts/beaverdeck`.
 - `deploy.sh` is a local/minikube-oriented helper, not a verified production pipeline.
-- The 2026-08-17 maintenance pass applied Kubernetes Go modules `0.36.3`, `modernc.org/sqlite` `1.56.0`, PostCSS `8.5.26`, and nanoid `3.3.18`. Vite remains `8.1.5` and lucide-react remains `1.26.0` because the security fixes did not require feature-version upgrades. Tests, race tests, vet, module verification, UI build, npm audit, Helm lint/render, and `govulncheck` passed.
+- The 2026-08-17 maintenance pass applied Kubernetes Go modules `0.36.3`, `modernc.org/sqlite` `1.56.0`, PostCSS `8.5.26`, and nanoid `3.3.18`. Release 1.6.3 updates transitive build dependency `source-map-js` to `1.2.2`. Vite remains `8.1.5` and lucide-react remains `1.26.0`.
 
 ## Conventions
 
@@ -195,7 +201,7 @@ Secret/config notes:
 - `DATA_DIR` persistence preserves non-auth runtime metadata only, not auth configuration.
 - There is currently no license, subscription, entitlement, billing, activation, worker-node limit, or paid-feature gate in BeaverDeck.
 - The current Node list path derives display roles from `node-role.kubernetes.io/*` labels, but it also loads all pods and metrics. It is not suitable as a periodic licensing counter without a separate lightweight Node-only path and explicit worker classification.
-- BeaverDeck `1.6.1` still sends only `appVersion` to the update-check endpoint. The neighboring BeaverDeck-server
+- BeaverDeck `1.6.3` sends only the compiled `appVersion` to the update-check endpoint. The neighboring BeaverDeck-server
   accepts this legacy request, records a legacy installation identity derived from the source address plus a hash,
   and also supports newer requests with an explicit `installationId`.
 - BeaverDeck-server stores installation heartbeats in one local JSON file and uses an optional static bearer token only for its summary endpoint. It has no durable multi-instance database, tenant isolation, billing integration, signed entitlements, activation lifecycle, rate limiting, or key management.

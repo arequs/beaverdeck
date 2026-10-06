@@ -1377,6 +1377,17 @@ body[data-theme="light"] .yaml-block .yaml-value { color: #92400e; }
   color: #ef4444;
 }
 
+.events-block {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.event-entry {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .dock-resizer {
   flex: 0 0 9px;
   cursor: row-resize;

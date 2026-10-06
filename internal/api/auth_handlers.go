@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"beaverdeck/internal/version"
 )
 
 func (s *Server) authProviders(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +38,7 @@ func (s *Server) authProviders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"initialized": bootstrapStatus.Initialized,
 		"local":       bootstrapStatus.Initialized,
-		"appVersion":  s.cfg.AppVersion,
+		"appVersion":  version.Current,
 		"google": map[string]any{
 			"enabled": bootstrapStatus.Initialized &&
 				strings.TrimSpace(googleCfg.ClientID) != "" &&

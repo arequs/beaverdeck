@@ -279,7 +279,12 @@ export default function BottomDock({
                           <ActionMenu
                             actions={[
                               makeAction('Manifest', permissionInfo('pods', 'view', pod.namespace), () => safe(() => openManifestTab(pod.namespace, 'pod', pod.name))),
-                              makeAction('Logs', permissionInfo('pods', 'view', pod.namespace), () => safe(() => openPodLogsTab(pod.namespace, pod.name, '', pod.containers))),
+                              makeAction('Logs', permissionInfo('pods', 'view', pod.namespace), () => safe(() => openPodLogsTab(
+                                pod.namespace,
+                                pod.name,
+                                pod.default_log_container,
+                                pod.log_containers || pod.containers
+                              ))),
                               makeAction(
                                 'Evict',
                                 permissionInfo('pods', 'edit', pod.namespace),

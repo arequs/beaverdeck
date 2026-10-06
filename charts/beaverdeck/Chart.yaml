@@ -2,17 +2,19 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool
 type: application
-version: 2.2.7
-appVersion: "1.6.2"
+version: 2.2.8
+appVersion: "1.6.3"
 home: https://beaverdeck.io
 sources:
   - https://github.com/arequs/beaverdeck
 icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.png
 annotations:
   artifacthub.io/changes: |
-    - kind: security
-      description: "Session tokens are now tracked server-side and revoked immediately on logout, tab close, or page refresh, instead of only clearing client-side state."
+    - kind: added
+      description: "Added search across Kubernetes Events and severity colors for Warning and Error events."
     - kind: fixed
-      description: "POST /api/auth/logout no longer a no-op; a copied or leaked token stops working as soon as the user logs out, refreshes, or closes the tab."
+      description: "Pod logs now include init containers and automatically select a failing or active init container."
     - kind: changed
-      description: "Added a pagehide handler that notifies the server via a keepalive request when a tab is closed, refreshed, or navigated away from."
+      description: "The application version and official update-check endpoint are compiled into BeaverDeck instead of being supplied through runtime environment variables."
+    - kind: security
+      description: "Updated the transitive frontend build dependency source-map-js to 1.2.2."

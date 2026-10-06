@@ -209,6 +209,8 @@ func (c *Client) ListPods(ctx context.Context, ns string, includeMetrics bool) (
 			Age:                 age(p.CreationTimestamp.Time),
 			Node:                p.Spec.NodeName,
 			Containers:          podContainerNames(&p),
+			LogContainers:       podLogContainerNames(&p),
+			DefaultLogContainer: podDefaultLogContainer(&p),
 			ContainerRestarts:   containerRestarts,
 			WorkloadKind:        workload.Kind,
 			WorkloadName:        workload.Name,
@@ -336,6 +338,40 @@ func podContainerNames(pod *corev1.Pod) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func podLogContainerNames(pod *corev1.Pod) []string {
+	out := make([]string, 0, len(pod.Spec.Containers)+len(pod.Spec.InitContainers))
+	for _, container := range pod.Spec.Containers {
+		if container.Name != "" {
+			out = append(out, container.Name)
+		}
+	}
+	for _, container := range pod.Spec.InitContainers {
+		if container.Name != "" {
+			out = append(out, container.Name)
+		}
+	}
+	return out
+}
+
+func podDefaultLogContainer(pod *corev1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+	for _, status := range pod.Status.InitContainerStatuses {
+		if status.State.Running != nil || status.State.Waiting != nil ||
+			(status.State.Terminated != nil && status.State.Terminated.ExitCode != 0) {
+			return status.Name
+		}
+	}
+	if len(pod.Spec.Containers) > 0 {
+		return pod.Spec.Containers[0].Name
+	}
+	if len(pod.Spec.InitContainers) > 0 {
+		return pod.Spec.InitContainers[0].Name
+	}
+	return ""
 }
 
 func (c *Client) ListCRDs(ctx context.Context) ([]CRDInfo, error) {

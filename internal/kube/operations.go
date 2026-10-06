@@ -163,10 +163,7 @@ func (c *Client) defaultPodContainer(ctx context.Context, ns, pod, container str
 	if err != nil {
 		return "", err
 	}
-	if len(obj.Spec.Containers) == 0 {
-		return "", nil
-	}
-	return obj.Spec.Containers[0].Name, nil
+	return podDefaultLogContainer(obj), nil
 }
 
 func (c *Client) WorkloadLogs(ctx context.Context, ns, kind, name string, tail int64) (string, error) {

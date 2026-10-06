@@ -77,6 +77,8 @@ type PodInfo struct {
 	Age                 string                 `json:"age"`
 	Node                string                 `json:"node"`
 	Containers          []string               `json:"containers"`
+	LogContainers       []string               `json:"log_containers"`
+	DefaultLogContainer string                 `json:"default_log_container"`
 	ContainerRestarts   []ContainerRestartInfo `json:"container_restarts"`
 	WorkloadKind        string                 `json:"workload_kind,omitempty"`
 	WorkloadName        string                 `json:"workload_name,omitempty"`
