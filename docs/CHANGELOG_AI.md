@@ -1,5 +1,36 @@
 # AI Change Log
 
+## 2026-10-09 — Prepare BeaverDeck 1.6.4 Dependency Security Release
+
+### Summary
+
+Moved the build baseline from Go `1.27rc3` to stable Go `1.27.2`, updated `golang.org/x/net` to `0.61.0` and
+`golang.org/x/text` to `0.43.0`, and refreshed the compatible Go dependency graph. Updated Kubernetes Go to `0.37.1`,
+SQLite to `1.60.1`, OAuth2 to `0.37.0`, React/React DOM to `19.3.0`, lucide-react to `1.54.0`, and Vite to `8.3.4`.
+Prepared application `1.6.4` and Helm chart `2.2.9` metadata and release notes.
+
+### Files changed
+
+- `go.mod`, `go.sum`, `Dockerfile`
+- `ui/package.json`, `ui/package-lock.json`
+- `internal/version/version.go`, `openapi.yaml`
+- `charts/beaverdeck/Chart.yaml`, `values.yaml`, `README.md`
+- `README.md`, `docs/changelog/1.6.4.md`
+- `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/CHANGELOG_AI.md`
+
+### Validation
+
+- `go test ./...`, `go vet ./...`, and `go mod verify` passed with Go `1.27.2`.
+- `npm run build` passed with Vite `8.3.4`; `npm audit` reported zero vulnerabilities and `npm outdated` reported
+  no available direct dependency updates.
+- `helm lint --strict`, full `helm template`, and chart packaging passed for chart `2.2.9` / app `1.6.4`.
+- A stripped static Linux amd64 server binary built successfully and reports Go `1.27.2` with `x/net` `0.61.0` and
+  `x/text` `0.43.0` in its embedded build information.
+- Current `govulncheck` source and binary scans both reported `No vulnerabilities found`.
+- The newer `k8s.io/kube-openapi` development snapshot was tested and rejected because it requires
+  `structured-merge-diff/v7`; the final graph uses the newest revision pinned by Kubernetes `0.37.1` and compiles
+  against `structured-merge-diff/v6`.
+
 ## 2026-10-06 — Prepare BeaverDeck 1.6.3 And Helm Chart 2.2.8
 
 ### Summary

@@ -7,7 +7,7 @@ RUN npm ci
 COPY ui/ ./
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.27rc3-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS build
 WORKDIR /src
 
 ARG TARGETOS

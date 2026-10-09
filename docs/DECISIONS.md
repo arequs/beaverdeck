@@ -1,5 +1,28 @@
 # Technical Decisions
 
+## 2026-10-09 — Move The Security Baseline To Stable Go 1.27.2 And Current Compatible Dependencies
+
+### Context
+
+The Go `1.27rc3` build baseline and `golang.org/x/net` `0.56.0` / `golang.org/x/text` `0.39.0` module graph are
+affected by newly reported standard-library, HTTP/2, and text-processing vulnerabilities. Stable Go `1.27.2`,
+`x/net` `0.60.0`, and `x/text` `0.41.0` are the first fixed versions reported for the relevant findings.
+
+### Decision
+
+Build BeaverDeck with stable Go `1.27.2` and require the newer available `x/net` `0.61.0` and `x/text` `0.43.0`.
+Update the remaining direct Go and frontend dependencies to their newest compatible stable releases for BeaverDeck
+1.6.4, including Kubernetes Go `0.37.1`, SQLite `1.60.1`, React `19.3.0`, and Vite `8.3.4`. Keep
+`k8s.io/kube-openapi` on the revision pinned by Kubernetes `0.37.1`: the newer development snapshot has already
+moved to `structured-merge-diff/v7` and does not compile with the stable Kubernetes module set, which still uses v6.
+
+### Consequences
+
+Local and container builds use the same patched stable Go release. The broader dependency refresh requires the full
+Go test/vet, frontend build/audit, Helm render, and vulnerability-scan release gate before publication. Future
+`kube-openapi` updates should follow the revision selected by the next compatible stable Kubernetes release rather
+than an unrelated development snapshot.
+
 ## 2026-10-06 — Compile Runtime Version And Keep Update Checks Official
 
 ### Context

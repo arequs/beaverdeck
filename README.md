@@ -184,7 +184,7 @@ Generate a local user password hash with the BeaverDeck binary or image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.3 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.4 hash-password
 unset BDPASS
 ```
 
@@ -238,7 +238,7 @@ Group mappings can use the group object ID, display name, mail address, or secur
 
 ## Build Requirements
 
-- Go 1.27rc3 or newer
+- Go 1.27.2 or newer
 - Node.js 22 or newer for frontend builds
 
 ## Repository Layout
