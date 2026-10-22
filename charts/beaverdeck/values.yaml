@@ -3,8 +3,8 @@ fullnameOverride: ""
 namespaceOverride: ""
 
 image:
-  repository: arequs/beaverdeck
-  tag: 1.6.4
+  repository: docker.io/arequs/beaverdeck
+  tag: 1.6.5
   pullPolicy: IfNotPresent
 
 listenAddr: ":8080"

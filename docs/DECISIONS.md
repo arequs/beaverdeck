@@ -1,5 +1,25 @@
 # Technical Decisions
 
+## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
+
+### Context
+
+CVE-2026-111943 / GO-2026-6809 affects `crypto/x509.Certificate.Verify` in Go 1.27 before 1.27.3. The upstream fix
+adds a denylist for known intermediate certificates that are no longer considered trustworthy. BeaverDeck 1.6.4 is
+built with the affected Go 1.27.2 standard library.
+
+### Decision
+
+Build BeaverDeck 1.6.5 with Go 1.27.3 in both `go.mod` and the container build stage. Do not change dependency module
+versions or application methods for this release because the fix is entirely within the standard library and the Go
+1 compatibility guarantee applies to the patch update.
+
+### Consequences
+
+All newly built BeaverDeck 1.6.5 binaries include the patched `crypto/x509` verification behavior. Existing APIs,
+authentication providers, Helm values, runtime configuration, and stored data remain compatible. Release validation
+must include source and binary vulnerability scans plus the complete Go, frontend, and Helm checks.
+
 ## 2026-10-09 — Move The Security Baseline To Stable Go 1.27.2 And Current Compatible Dependencies
 
 ### Context
