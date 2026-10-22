@@ -2,8 +2,8 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool
 type: application
-version: 2.2.9
-appVersion: "1.6.4"
+version: 2.2.10
+appVersion: "1.6.5"
 home: https://beaverdeck.io
 sources:
   - https://github.com/arequs/beaverdeck
@@ -11,6 +11,4 @@ icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.pn
 annotations:
   artifacthub.io/changes: |
     - kind: security
-      description: "Updated the build toolchain to Go 1.27.2 and raised golang.org/x/net to 0.61.0 and golang.org/x/text to 0.43.0 for current standard-library, HTTP/2, and text-processing security fixes."
-    - kind: changed
-      description: "Updated Kubernetes Go modules to 0.37.1, modernc SQLite to 1.60.1, React to 19.3.0, Vite to 8.3.4, and other compatible dependencies."
+      description: "Updated the build toolchain to Go 1.27.3 to address CVE-2026-111943 in the crypto/x509 standard-library package."

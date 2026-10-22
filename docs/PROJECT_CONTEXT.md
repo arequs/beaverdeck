@@ -2,7 +2,7 @@
 
 ## Current Main Release
 
-BeaverDeck `1.6.4` with Helm chart `2.2.9` is prepared on `main`. Runtime version reporting comes from
+BeaverDeck `1.6.5` with Helm chart `2.2.10` is prepared on `main`. Runtime version reporting comes from
 `internal/version.Current`; Helm `appVersion` and `image.tag` are packaging metadata only. Update checks always POST
 that compiled version to `https://beaverdeck.io/update-check` and have no endpoint or version environment override.
 
@@ -52,7 +52,7 @@ Auth/config flow:
 
 ## Tech Stack
 
-- Backend: Go `1.27.2`.
+- Backend: Go `1.27.3`.
 - Go extension modules include `golang.org/x/net` `0.61.0` and `golang.org/x/text` `0.43.0`.
 - Frontend: React `19.3.0`, Vite `8.3.4`, lucide-react `1.54.0`, xterm.js with fit addon.
 - Kubernetes: `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` `0.37.1`.
@@ -65,7 +65,7 @@ Auth/config flow:
 
 ## Runtime & Environments
 
-- Prepared release baseline: BeaverDeck `1.6.4`, Helm chart `2.2.9`, default image tag `1.6.4`.
+- Prepared release baseline: BeaverDeck `1.6.5`, Helm chart `2.2.10`, default image tag `1.6.5`.
 - Runtime mode is in-cluster only in the application entrypoint; it calls `kube.InCluster()`.
 - HTTP listens on `LISTEN_ADDR`, default `:8080`.
 - `BASE_PATH` supports non-root ingress paths.
@@ -155,13 +155,14 @@ Secret/config notes:
 ## CI/CD
 
 - No CI/CD workflow directory was found in this checkout.
-- `Dockerfile` builds frontend assets with Node 22, builds the Go server with Go 1.27.2, and copies the binary into a distroless nonroot image.
-- Go security baseline is Go `1.27.2` or newer with `golang.org/x/net` `0.61.0` or newer and `golang.org/x/text` `0.43.0` or newer.
+- `Dockerfile` builds frontend assets with Node 22, builds the Go server with Go 1.27.3, and copies the binary into a distroless nonroot image.
+- Go security baseline is Go `1.27.3` or newer with `golang.org/x/net` `0.61.0` or newer and `golang.org/x/text` `0.43.0` or newer.
 - `ui/package.json` provides `npm run build` and `npm run dev`.
 - Go tests are run with `go test ./...`.
 - Helm rendering can be checked with `helm template beaverdeck charts/beaverdeck`.
 - `deploy.sh` is a local/minikube-oriented helper, not a verified production pipeline.
 - Release 1.6.4 updates the stable Go toolchain to `1.27.2`, Kubernetes Go modules to `0.37.1`, `modernc.org/sqlite` to `1.60.1`, `golang.org/x/net` to `0.61.0`, `golang.org/x/text` to `0.43.0`, React to `19.3.0`, Vite to `8.3.4`, and lucide-react to `1.54.0`.
+- Release 1.6.5 updates the Go toolchain to `1.27.3` for CVE-2026-111943 / GO-2026-6809 in `crypto/x509` without changing dependency modules or product APIs.
 
 ## Conventions
 
@@ -201,7 +202,7 @@ Secret/config notes:
 - `DATA_DIR` persistence preserves non-auth runtime metadata only, not auth configuration.
 - There is currently no license, subscription, entitlement, billing, activation, worker-node limit, or paid-feature gate in BeaverDeck.
 - The current Node list path derives display roles from `node-role.kubernetes.io/*` labels, but it also loads all pods and metrics. It is not suitable as a periodic licensing counter without a separate lightweight Node-only path and explicit worker classification.
-- BeaverDeck `1.6.4` sends only the compiled `appVersion` to the update-check endpoint. The neighboring BeaverDeck-server
+- BeaverDeck `1.6.5` sends only the compiled `appVersion` to the update-check endpoint. The neighboring BeaverDeck-server
   accepts this legacy request, records a legacy installation identity derived from the source address plus a hash,
   and also supports newer requests with an explicit `installationId`.
 - BeaverDeck-server stores installation heartbeats in one local JSON file and uses an optional static bearer token only for its summary endpoint. It has no durable multi-instance database, tenant isolation, billing integration, signed entitlements, activation lifecycle, rate limiting, or key management.

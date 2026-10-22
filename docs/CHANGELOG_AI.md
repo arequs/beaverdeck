@@ -1,5 +1,32 @@
 # AI Change Log
 
+## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
+
+### Summary
+
+Updated the module and container build baseline from Go `1.27.2` to `1.27.3` for CVE-2026-111943 /
+GO-2026-6809 in `crypto/x509`. Prepared BeaverDeck `1.6.5` and Helm chart `2.2.10` metadata and release notes without
+changing application APIs, authentication methods, configuration, or dependency module versions.
+
+### Files changed
+
+- `go.mod`, `Dockerfile`
+- `internal/version/version.go`, `openapi.yaml`
+- `ui/package.json`, `ui/package-lock.json`
+- `charts/beaverdeck/Chart.yaml`, `values.yaml`, `README.md`
+- `README.md`, `docs/changelog/1.6.5.md`
+- `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/CHANGELOG_AI.md`
+
+### Validation
+
+- `go test ./...`, `go vet ./...`, and `go mod verify` passed with Go `1.27.3`.
+- `npm run build` passed with Vite `8.3.4`; `npm audit` reported zero vulnerabilities.
+- `helm lint --strict`, full `helm template`, and chart packaging passed for chart `2.2.10` / app `1.6.5`.
+- Stripped static Linux amd64 and arm64 server binaries built successfully and both report Go `1.27.3` in their
+  embedded build information.
+- Current `govulncheck` `1.9.0` source scan and binary scans for both Linux architectures reported
+  `No vulnerabilities found`.
+
 ## 2026-10-09 — Prepare BeaverDeck 1.6.4 Dependency Security Release
 
 ### Summary
