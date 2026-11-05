@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router';
-import { LOGIN_ROUTE } from './shared/routes/index.js';
+import { LOGIN_ROUTE, WORKSPACE_ROUTE } from './shared/routes/index.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -212,11 +212,11 @@ export default function App() {
   const [bottomNotice, setBottomNotice] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
-  const [legacyNav, setLegacyNav] = useState('');
-  const isLegacyRoute = Boolean(matchPath('/legacy', location.pathname));
+  const [workspaceNav, setWorkspaceNav] = useState('');
+  const isWorkspaceRoute = Boolean(matchPath(WORKSPACE_ROUTE, location.pathname));
   const activeNav = matchPath('/events', location.pathname) ? 'events'
     : (matchPath('/dashboard', location.pathname) || matchPath('/', location.pathname) || matchPath(LOGIN_ROUTE, location.pathname)) ? 'dashboard'
-      : isLegacyRoute ? legacyNav : 'not-found';
+      : isWorkspaceRoute ? workspaceNav : 'not-found';
   const [expandedNavSections, setExpandedNavSections] = useState(() => new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
   const [loadedNavs, setLoadedNavs] = useState({});
   const [initialNavLoading, setInitialNavLoading] = useState('');
@@ -427,7 +427,7 @@ export default function App() {
     afterLogout: () => {
       setStatus('');
       setShowProfile(false);
-      setLegacyNav('');
+      setWorkspaceNav('');
       setExpandedNavSections(new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
       setLoadedNavs({});
       setInitialNavLoading('');
@@ -659,10 +659,10 @@ export default function App() {
       const path = `/${nextNav}`;
       if (location.pathname !== path) navigate(path);
     } else {
-      setLegacyNav(nextNav);
-      if (!isLegacyRoute) navigate('/legacy');
+      setWorkspaceNav(nextNav);
+      if (!isWorkspaceRoute) navigate(WORKSPACE_ROUTE);
     }
-  }, [expandNavSectionForNav, isLegacyRoute, location.pathname, navigate]);
+  }, [expandNavSectionForNav, isWorkspaceRoute, location.pathname, navigate]);
   const toggleNavSection = useCallback((section) => {
     setExpandedNavSections((prev) => {
       const next = new Set(prev);
@@ -813,12 +813,12 @@ export default function App() {
   }, [activeNav, namespaceQuery, isLoggedIn, token, podsAutoRefreshEnabled, podsAutoRefreshSeconds]);
 
   useEffect(() => {
-    const legacyItems = visibleNavItems.filter((item) => item.id !== 'dashboard' && item.id !== 'events');
-    if (isLoggedIn && isLegacyRoute && !legacyItems.some((item) => item.id === legacyNav)) {
-      const fallback = legacyItems[0]?.id || '';
-      if (legacyNav !== fallback) setLegacyNav(fallback);
+    const workspaceItems = visibleNavItems.filter((item) => item.id !== 'dashboard' && item.id !== 'events');
+    if (isLoggedIn && isWorkspaceRoute && !workspaceItems.some((item) => item.id === workspaceNav)) {
+      const fallback = workspaceItems[0]?.id || '';
+      if (workspaceNav !== fallback) setWorkspaceNav(fallback);
     }
-  }, [visibleNavItems, legacyNav, isLegacyRoute, isLoggedIn]);
+  }, [visibleNavItems, workspaceNav, isWorkspaceRoute, isLoggedIn]);
 
   useEffect(() => () => {
     Object.keys(execSocketsRef.current).forEach((id) => {
@@ -3553,7 +3553,7 @@ export default function App() {
         >
           <div key={activeNav} className={`nav-view ${isPodsView ? 'nav-view-pods' : ''}`}>
           {routeForbidden ? <ForbiddenPage /> : activeNav === 'not-found' ? <NotFoundPage /> : !activeNav ? (
-            <div className="nav-loading-state"><strong>No available legacy pages</strong><button type="button" onClick={() => activateNav('dashboard')}>Open Dashboard</button></div>
+            <div className="nav-loading-state"><strong>No available pages</strong><button type="button" onClick={() => activateNav('dashboard')}>Open Dashboard</button></div>
           ) : showInitialNavLoader ? (
             <div className="nav-loading-state">
               <strong>Loading {visibleNavItems.find((x) => x.id === activeNav)?.label || 'view'}...</strong>

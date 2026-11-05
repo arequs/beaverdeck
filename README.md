@@ -34,7 +34,7 @@ Routes are relative to the application base URL (including `BASE_PATH` when conf
 - `/` opens Dashboard after sign-in; `/login` shows the sign-in screen.
 - `/dashboard` opens Dashboard.
 - `/events` opens Events. For example, `/events?namespace=production,staging&q=Warning` selects those namespaces and filters displayed events. Explicit namespace selections take priority over saved preferences and must be allowed by the current user's role. Without `namespace`, the existing allowed selection or default is used.
-- `/legacy` is the temporary area for all other workspace screens. It opens the first available legacy screen when loaded afresh; links to individual legacy screens are not yet supported. The sidebar continues to open those screens.
+- `/_workspace` is reserved for workspace screens that do not yet have their own routes. It opens the first available screen when loaded afresh; links to individual screens are not yet supported. The sidebar continues to open those screens.
 
 Direct links require authentication and resource permissions. After a refresh, explicit logout, or session expiry, the requested path and query are retained for a new successful sign-in. Refreshing loses the in-memory session and never restores authentication; the existing pagehide logout request is best-effort. The destination is subject to the new user's permissions. Browser Back and Forward work between routed pages.
 

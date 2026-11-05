@@ -2,11 +2,13 @@
 
 ## 2026-11-06 — Add initial routing and return navigation
 
-Added React Router navigation for login, Dashboard, Events and a temporary legacy area, with runtime base-path support, permission-checked Events URL filters and validated return after a fresh sign-in. Existing Bearer authentication, logout and token-validation rules remain unchanged; later page migrations must retain their regression gate.
+Added React Router navigation for login, Dashboard, Events and the reserved `/_workspace` area, with runtime base-path support, permission-checked Events URL filters and validated return after a fresh sign-in. Existing Bearer authentication, logout and token-validation rules remain unchanged; later page migrations must retain their regression gate.
 
 Validated root and prefixed deployments, local sign-in, logout, F5, expiry, restart, 401, permissions, browser history, API/SSE/Exec credentials and delivered logout replay. Go tests, vet, frontend build and routing tests passed; the user verified the deployed minikube application. Google, OIDC and Entra handoffs were simulated because live providers were unavailable. Pagehide revocation remains best-effort.
 
 Documented Conventional Commit grouping and kept planning materials local. Updated minikube to the current build while retaining its authentication configuration.
+
+Renamed the temporary workspace route to `/_workspace`, keeping its navigation behavior and reserving a distinct path for the transition. The frontend build, routing tests and browser navigation checks passed; the user verified the deployed minikube application.
 
 ## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
 

@@ -2,7 +2,7 @@
 
 ## 2026-11-06 — Incremental routing without changing authentication
 
-Use React Router for incremental page migration, with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. The Go SPA entry injects an escaped runtime base path; Dashboard remains the default, Events is the pilot, and other pages use the temporary legacy area. TypeScript, FSD and Steiger remain deferred.
+Use React Router for incremental page migration, with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. The Go SPA entry injects an escaped runtime base path; Dashboard remains the default, Events is the pilot, and other pages use the reserved `/_workspace` route. The underscore distinguishes this temporary area from future page routes. TypeScript, FSD and Steiger remain deferred.
 
 Preserve all existing login, Bearer transport, logout, token validation and invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, and a return destination opens only after a new successful sign-in. Local sign-in carries the validated destination in the URL; external sign-in uses prefix-scoped tab-local metadata and falls back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; no session cookie, persistent session credentials or silent refresh restoration is introduced.
 
