@@ -4,6 +4,14 @@
 
 Excluded local planning files from version control and documented that policy in agent guidance. Removed references to local artifacts from tracked project documentation; implementation and authentication behavior are unchanged.
 
+## 2026-11-05 — Verify production serving under a prefix
+
+Built the frontend and a production Go binary and checked separate temporary root and `/beaverdeck` pods: HTML and all referenced assets, local login, Bearer API and SSE, Exec WebSocket upgrade, and logout/replay. The Vite API/WebSocket proxy and prefix guidance remain in place. The test image used the locally built binary; the full Dockerfile build was interrupted during slow base-image downloads.
+
+## 2026-11-05 — Begin runtime base-path support
+
+The SPA entry now supplies a runtime base path for frontend URLs and relative assets, independently of the current route. Actual files are served directly; browser navigation, including dotted paths, falls back to the SPA, while missing assets and API or health subpaths return 404. Existing Vite development defaults and API proxy remain in place. Routing integration and acceptance remain pending.
+
 ## 2026-11-05 — Verify refresh authentication baseline
 
 Verified with the user and a temporary diagnostic proxy that a protected request returned 200 before F5, pagehide logout reached the backend and returned 200, and replay returned 401. F5 showed login; the user confirmed no token or password in browser local/session storage. Logout delivery remains best-effort. No runtime behavior changed.

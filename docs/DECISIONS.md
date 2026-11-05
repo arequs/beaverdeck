@@ -1,5 +1,9 @@
 # Technical Decisions
 
+## 2026-11-05 — Runtime base path for routed SPA
+
+Inject the deployment prefix into the HTML entry as an escaped meta value and base URL. This keeps API, auth and asset addresses independent of the active page while preserving the existing forwarded-prefix trust model and root Vite proxy.
+
 ## 2026-11-05 — Preserve Authentication Lifecycle Throughout Frontend Migration
 
 ### Decision
@@ -14,7 +18,7 @@ F5 still loses authentication and attempts the existing best-effort revocation. 
 
 ### Decision
 
-Stage 1 preserves the requested URL across existing authentication loss and returns only after new successful sign-in; it does not preserve authentication across F5. Defer TypeScript, FSD, and Steiger; place newly extracted page components in `ui/src/pages` using JSX. Migrate page state and loading incrementally while preserving the shared workspace shell and BottomDock lifecycle.
+Stage 1 preserves the requested URL across existing authentication loss and returns only after new successful sign-in; it does not preserve authentication across F5. Defer TypeScript, FSD, and Steiger; place newly extracted page components directly in `ui/src` using JSX. Migrate page state and loading incrementally while preserving the shared workspace shell and BottomDock lifecycle.
 
 ### Status and consequences
 

@@ -16,6 +16,8 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 
 ## Architecture
 
+- The Go SPA entry injects an HTML-escaped runtime base path and base URL, taking configured `BASE_PATH` before the existing forwarded-prefix fallback. Frontend API and auth paths use that value independently of the current route; Vite development defaults to root.
+
 ### Authentication regression baseline for frontend migration
 
 - Manual logout attempts Bearer-token revocation, then clears in-memory credentials and workspace state even if the request fails. A protected API 401 dispatches the existing auth-expired event and runs the same cleanup without another remote revocation.
@@ -23,7 +25,7 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 - Tokens have a fixed 12-hour expiry, a process-local signing key and a process-local session record. Restart invalidates them; authentication also rejects invalid signatures and missing or revoked records.
 - Local password reset increments the session version; deleting a local user or losing its role prevents authentication. Local role assignment and role permission changes are resolved on subsequent requests. External sessions retain their issued role but resolve its current definition; missing roles are rejected. Configuration snapshot application advances existing local session versions; failed persistence restores the previous configuration and exact versions.
 
-- Planned frontend routing preserves every existing logout, token-revocation and validation path: F5 still loses authentication, pagehide revocation remains best-effort, and return to the requested URL follows a new successful login. Bearer credentials stay in React memory, with unchanged API/SSE/Exec and login/OAuth transport. Only non-credential return metadata can persist. TypeScript/FSD/Steiger remain deferred; new page wrappers go under `ui/src/pages`.
+- Planned frontend routing preserves every existing logout, token-revocation and validation path: F5 still loses authentication, pagehide revocation remains best-effort, and return to the requested URL follows a new successful login. Bearer credentials stay in React memory, with unchanged API/SSE/Exec and login/OAuth transport. Only non-credential return metadata can persist. TypeScript/FSD/Steiger remain deferred; new page wrappers go directly under `ui/src`.
 
 - `cmd/server/` contains the Go backend entrypoint and embeds the built frontend assets from `cmd/server/web/dist`.
 - `internal/api/` defines HTTP and WebSocket routes for auth, admin configuration, Kubernetes resources, manifests, logs, exec, node/workload/pod actions, and apply operations.
