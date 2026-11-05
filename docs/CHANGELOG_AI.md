@@ -1854,3 +1854,22 @@ the client only cleared local React state.
 ### Follow-ups
 
 - None.
+
+
+## 2026-11-06 — Restore routes after a fresh sign-in
+
+Added validated return destinations for local and external sign-in without persisting credentials or changing logout. Updated route documentation and navigation tests. Live external-provider verification remains outstanding.
+
+Clarified the destination validator with named checks, explicit branches, and comments describing its security boundaries; validation behavior remains unchanged.
+
+Centralized the shared login route and auth API routes under `ui/src/shared/routes/` and reused them in navigation, requests, and destination validation.
+
+Simplified return validation to one path decoding pass and removed filtering of encoded separators and query parameter names. Query parameters can now be retained as navigation metadata regardless of their names.
+
+Verified local return navigation in Firefox with a mock API: manual logout, refresh, and a protected request returning 401 each require a fresh login before returning to Events. Manual logout and refresh sent Bearer logout requests; the 401 flow did not issue another logout request.
+
+Verified simulated Google, OIDC, and Entra callback handoffs in Firefox and prefix-scoped return metadata. Added backend tests for provider state validation and existing callback URIs. Live external-provider authentication remains unverified.
+
+Verified in Firefox with a mock API that login refresh, repeated failed sign-ins, provider errors, and bootstrap retain the destination. Returning uses the new user's permissions; blocked session storage preserves local return and makes external sign-in fall back to Dashboard.
+
+Documented return navigation, fresh-authentication requirements, and the blocked-storage fallback. Rebuilt the frontend and checked the production Go SPA handler in Firefox at root and `/beaverdeck` with a mock API and simulated external provider.

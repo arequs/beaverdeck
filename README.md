@@ -36,7 +36,9 @@ Routes are relative to the application base URL (including `BASE_PATH` when conf
 - `/events` opens Events. For example, `/events?namespace=production,staging&q=Warning` selects those namespaces and filters displayed events. Explicit namespace selections take priority over saved preferences and must be allowed by the current user's role. Without `namespace`, the existing allowed selection or default is used.
 - `/legacy` is the temporary area for all other workspace screens. It opens the first available legacy screen when loaded afresh; links to individual legacy screens are not yet supported. The sidebar continues to open those screens.
 
-Direct links require authentication and resource permissions. Refreshing loses the in-memory session and requires a new sign-in; the existing pagehide logout request is best-effort. The current URL remains available during a direct-link refresh, but restoring a destination after explicit logout or an external sign-in is still being implemented. Browser Back and Forward work between routed pages.
+Direct links require authentication and resource permissions. After a refresh, explicit logout, or session expiry, the requested path and query are retained for a new successful sign-in. Refreshing loses the in-memory session and never restores authentication; the existing pagehide logout request is best-effort. The destination is subject to the new user's permissions. Browser Back and Forward work between routed pages.
+
+External sign-in stores the destination in tab-local session storage during the provider redirect. If that storage is unavailable, external sign-in still works and opens Dashboard; local sign-in can still return to the requested address. Query parameters are retained as supplied, so avoid putting credentials in URLs.
 
 ## Dashboard
 

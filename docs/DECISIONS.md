@@ -762,3 +762,12 @@ still not synchronized across replicas (`replicas: 1` is pinned). Two logins for
 same wall-clock second could in rare cases collide onto one session record; this is an accepted, documented
 limitation, not a regression introduced silently. There is still no sliding idle timeout — an open, unused tab stays
 valid for the full 12h `sessionTokenTTL`.
+
+
+## 2026-11-06 — Retain navigation without retaining authentication
+
+Return destinations are validated internal paths and queries. Local sign-in keeps them in the login URL; external sign-in uses prefix-scoped tab-local navigation metadata. Blocked metadata storage falls back to Dashboard for external sign-in. Credentials and existing logout behavior remain unchanged.
+
+Shared frontend routes are grouped by purpose under `ui/src/shared/routes/`. The login route and auth API prefix used by destination validation are defined alongside the routes used by navigation and requests, so their security boundaries stay aligned.
+
+Return validation decodes the path once and checks its characters, segments, application prefix, and auth routes. Query parameter names are not filtered; the destination query can therefore be retained in tab-local navigation metadata during external sign-in.

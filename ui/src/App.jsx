@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router';
+import { LOGIN_ROUTE } from './shared/routes/index.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -214,7 +215,7 @@ export default function App() {
   const [legacyNav, setLegacyNav] = useState('');
   const isLegacyRoute = Boolean(matchPath('/legacy', location.pathname));
   const activeNav = matchPath('/events', location.pathname) ? 'events'
-    : (matchPath('/dashboard', location.pathname) || matchPath('/', location.pathname) || matchPath('/login', location.pathname)) ? 'dashboard'
+    : (matchPath('/dashboard', location.pathname) || matchPath('/', location.pathname) || matchPath(LOGIN_ROUTE, location.pathname)) ? 'dashboard'
       : isLegacyRoute ? legacyNav : 'not-found';
   const [expandedNavSections, setExpandedNavSections] = useState(() => new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
   const [loadedNavs, setLoadedNavs] = useState({});
@@ -617,7 +618,7 @@ export default function App() {
   const eventNamespacesPending = activeNav === 'events' && requestedEventNamespaces !== null &&
     (requestedEventNamespaces.length !== selectedNamespaces.length ||
       requestedEventNamespaces.some((ns, index) => ns !== selectedNamespaces[index]));
-  const routeBlocked = routeForbidden || eventNamespacesPending || activeNav === 'not-found' || !activeNav;
+  const routeBlocked = routeForbidden || eventNamespacesPending || activeNav === 'not-found' || !activeNav || Boolean(matchPath(LOGIN_ROUTE, location.pathname));
   const effectiveEventSearch = activeNav === 'events' && eventParams.has('q') ? eventParams.get('q') : eventSearch;
 
   useEffect(() => {
@@ -818,12 +819,6 @@ export default function App() {
       if (legacyNav !== fallback) setLegacyNav(fallback);
     }
   }, [visibleNavItems, legacyNav, isLegacyRoute, isLoggedIn]);
-
-  useEffect(() => {
-    if (isLoggedIn && (matchPath('/', location.pathname) || matchPath('/login', location.pathname))) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [isLoggedIn, location.pathname, navigate]);
 
   useEffect(() => () => {
     Object.keys(execSocketsRef.current).forEach((id) => {
