@@ -1,8 +1,36 @@
 # AI Change Log
 
+## 2026-11-05 — Establish commit organization rules
+
+Documented Conventional Commit naming and grouping completed work by the order of task blocks, while preserving local planning materials.
+
+## 2026-11-05 — Document current navigation routes
+
+Documented Dashboard, Events URL filters and the temporary legacy route, including its screen-restoration limitation and current sign-in behavior. Rebuilt the frontend and verified the documented URLs and embedded assets through temporary production Go servers at root and `/beaverdeck`; the test pods were removed.
+
+## 2026-11-05 — Connect Events URL filters
+
+Events applies explicit namespace and search parameters after fresh authentication; namespace permissions are checked before loading and controls update the URL. Older Events responses cannot replace a newer selection. Firefox with a test API covered saved defaults, explicit and forbidden selections, search, and refresh followed by sign-in. Frontend build and path tests passed.
+
+## 2026-11-05 — Verify legacy workspace navigation
+
+Kept legacy selection limited to available non-routed sections and added a Dashboard action when none are available. Firefox checks with a test API covered browser history, Pods, dock persistence, log stream cancellation and resumption, and the absence of pagehide/logout during internal navigation. The frontend build passed.
+
+## 2026-11-05 — Group routed pages under src/pages
+
+Moved the new routed page wrappers and route messages into `ui/src/pages` and updated their imports. Existing presentation components remain in `ui/src/components`; route and authentication behavior is unchanged.
+
+## 2026-11-05 — Add initial routed pages
+
+Connected the workspace to browser routing with JSX wrappers for login, Dashboard and Events, plus forbidden and not-found views. Direct links require login and Events permissions are checked before resource loading; legacy sections use a temporary route. Verified initial access, Dashboard default, forbidden requests, not-found, browser history and legacy navigation in Firefox with a test API. Destination return and Events query integration are still pending.
+
 ## 2026-11-05 — Keep planning materials local
 
 Excluded local planning files from version control and documented that policy in agent guidance. Removed references to local artifacts from tracked project documentation; implementation and authentication behavior are unchanged.
+
+## 2026-11-05 — Add React Router dependency
+
+Pinned React Router 7.18.5 for the planned declarative route migration. Its Node 20+ and React 18+ requirements fit the existing toolchain; version 8 requires a newer Node 22 patch level. The frontend build passed. No routes were changed in this step.
 
 ## 2026-11-05 — Verify production serving under a prefix
 

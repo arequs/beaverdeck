@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { matchPath, useLocation, useNavigate } from 'react-router';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -17,8 +18,11 @@ import {
 import ApplyYamlPage from './components/ApplyYamlPage.jsx';
 import ArgoCDApplicationsPage from './components/ArgoCDApplicationsPage.jsx';
 import BottomDock from './components/BottomDock.jsx';
-import { BootstrapSetupScreen, LoginScreen, SidebarNav, WorkspaceHeader } from './components/AppChrome.jsx';
-import DashboardPage from './components/DashboardPage.jsx';
+import { BootstrapSetupScreen, SidebarNav, WorkspaceHeader } from './components/AppChrome.jsx';
+import LoginPage from './pages/LoginPage.jsx';
+import DashboardPage from './pages/DashboardPage.jsx';
+import EventsPage from './pages/EventsPage.jsx';
+import { ForbiddenPage, NotFoundPage } from './pages/RouteMessage.jsx';
 import HelmReleasesPage from './components/HelmReleasesPage.jsx';
 import InsightsPage from './components/InsightsPage.jsx';
 import NodesPage from './components/NodesPage.jsx';
@@ -28,7 +32,6 @@ import { ClusterRolesPage, NamespacedRolesPage, ServiceAccountsPage } from './co
 import {
   CRDsPage,
   ConfigMapsPage,
-  EventsPage,
   IngressesPage,
   PVCsPage,
   PVsPage,
@@ -202,11 +205,17 @@ function podRefKey(namespace, name) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [status, setStatus] = useState('');
   const [bottomNotice, setBottomNotice] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
-  const [activeNav, setActiveNav] = useState('dashboard');
+  const [legacyNav, setLegacyNav] = useState('');
+  const isLegacyRoute = Boolean(matchPath('/legacy', location.pathname));
+  const activeNav = matchPath('/events', location.pathname) ? 'events'
+    : (matchPath('/dashboard', location.pathname) || matchPath('/', location.pathname) || matchPath('/login', location.pathname)) ? 'dashboard'
+      : isLegacyRoute ? legacyNav : 'not-found';
   const [expandedNavSections, setExpandedNavSections] = useState(() => new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
   const [loadedNavs, setLoadedNavs] = useState({});
   const [initialNavLoading, setInitialNavLoading] = useState('');
@@ -356,6 +365,7 @@ export default function App() {
   const dockResizeStateRef = useRef(null);
   const podsAutoRefreshBusyRef = useRef(false);
   const dashboardRequestRef = useRef(0);
+  const eventRequestRef = useRef(0);
   const warningHideTimerRef = useRef(null);
   const logStreamAbortRef = useRef(null);
   const logsOutputRef = useRef(null);
@@ -416,7 +426,7 @@ export default function App() {
     afterLogout: () => {
       setStatus('');
       setShowProfile(false);
-      setActiveNav('dashboard');
+      setLegacyNav('');
       setExpandedNavSections(new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
       setLoadedNavs({});
       setInitialNavLoading('');
@@ -598,6 +608,39 @@ export default function App() {
     [isAdmin, userPermissions, crds, helmReleases, argoCDApplications]
   );
   const visibleNavItems = useMemo(() => visibleMenu.flatMap((group) => group.items), [visibleMenu]);
+  const eventParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedEventNamespaces = useMemo(() => eventParams.has('namespace')
+    ? [...new Set(eventParams.get('namespace').split(',').map((ns) => ns.trim()).filter(Boolean))]
+    : null, [eventParams]);
+  const routeForbidden = activeNav === 'events' && (!canAccessNav('events') ||
+    (requestedEventNamespaces !== null && requestedEventNamespaces.some((ns) => !namespaces.includes(ns))));
+  const eventNamespacesPending = activeNav === 'events' && requestedEventNamespaces !== null &&
+    (requestedEventNamespaces.length !== selectedNamespaces.length ||
+      requestedEventNamespaces.some((ns, index) => ns !== selectedNamespaces[index]));
+  const routeBlocked = routeForbidden || eventNamespacesPending || activeNav === 'not-found' || !activeNav;
+  const effectiveEventSearch = activeNav === 'events' && eventParams.has('q') ? eventParams.get('q') : eventSearch;
+
+  useEffect(() => {
+    if (isLoggedIn && activeNav === 'events' && !routeForbidden && eventNamespacesPending) {
+      setSelectedNamespaces(requestedEventNamespaces);
+    }
+  }, [isLoggedIn, activeNav, routeForbidden, eventNamespacesPending, requestedEventNamespaces]);
+
+  function updateEventParams(key, value) {
+    const params = new URLSearchParams(location.search);
+    params.set(key, value);
+    navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
+  }
+
+  function selectNamespaces(nextNamespaces) {
+    if (activeNav === 'events') updateEventParams('namespace', nextNamespaces.join(','));
+    setSelectedNamespaces(nextNamespaces);
+  }
+
+  function updateEventSearch(value) {
+    setEventSearch(value);
+    updateEventParams('q', value);
+  }
   const expandNavSectionForNav = useCallback((navId) => {
     const section = navSectionForId(visibleMenu, navId);
     if (!section) return;
@@ -611,10 +654,14 @@ export default function App() {
   const activateNav = useCallback((nextNav) => {
     if (!nextNav) return;
     expandNavSectionForNav(nextNav);
-    if (nextNav !== activeNav) {
-      setActiveNav(nextNav);
+    if (nextNav === 'dashboard' || nextNav === 'events') {
+      const path = `/${nextNav}`;
+      if (location.pathname !== path) navigate(path);
+    } else {
+      setLegacyNav(nextNav);
+      if (!isLegacyRoute) navigate('/legacy');
     }
-  }, [activeNav, expandNavSectionForNav]);
+  }, [expandNavSectionForNav, isLegacyRoute, location.pathname, navigate]);
   const toggleNavSection = useCallback((section) => {
     setExpandedNavSections((prev) => {
       const next = new Set(prev);
@@ -723,7 +770,13 @@ export default function App() {
   }, [activeNav]);
 
   useEffect(() => {
-    if (!isLoggedIn || !api) return;
+    eventRequestRef.current += 1;
+    if (activeNav === 'events') setEvents([]);
+    return () => { eventRequestRef.current += 1; };
+  }, [activeNav, namespaceQuery, routeBlocked, token]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !api || routeBlocked) return;
     const targetNav = activeNav;
     const firstLoad = !loadedNavs[targetNav];
     if (firstLoad) {
@@ -734,7 +787,7 @@ export default function App() {
       setInitialNavLoading((prev) => (prev === targetNav ? '' : prev));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeNav, namespaceQuery, isLoggedIn, token]);
+  }, [activeNav, namespaceQuery, isLoggedIn, token, routeBlocked]);
 
   useEffect(() => {
     if (!isLoggedIn || !api || activeNav !== 'pods' || !podsAutoRefreshEnabled || selectedNamespaces.length === 0) {
@@ -759,10 +812,18 @@ export default function App() {
   }, [activeNav, namespaceQuery, isLoggedIn, token, podsAutoRefreshEnabled, podsAutoRefreshSeconds]);
 
   useEffect(() => {
-    if (!visibleNavItems.find((x) => x.id === activeNav)) {
-      activateNav(visibleNavItems[0]?.id || 'dashboard');
+    const legacyItems = visibleNavItems.filter((item) => item.id !== 'dashboard' && item.id !== 'events');
+    if (isLoggedIn && isLegacyRoute && !legacyItems.some((item) => item.id === legacyNav)) {
+      const fallback = legacyItems[0]?.id || '';
+      if (legacyNav !== fallback) setLegacyNav(fallback);
     }
-  }, [visibleNavItems, activeNav, activateNav]);
+  }, [visibleNavItems, legacyNav, isLegacyRoute, isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn && (matchPath('/', location.pathname) || matchPath('/login', location.pathname))) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isLoggedIn, location.pathname, navigate]);
 
   useEffect(() => () => {
     Object.keys(execSocketsRef.current).forEach((id) => {
@@ -1068,8 +1129,8 @@ export default function App() {
   }, [nodes, parsedNodeLabelFilter.key]);
   const sortedNodes = useMemo(() => getSorted('nodes', filteredNodes), [filteredNodes, sortByNav]);
   const filteredEvents = useMemo(
-    () => filterRowsByQuery(events, eventSearch, ['last_seen', 'namespace', 'type', 'reason', 'object', 'message', 'count']),
-    [events, eventSearch]
+    () => filterRowsByQuery(events, effectiveEventSearch, ['last_seen', 'namespace', 'type', 'reason', 'object', 'message', 'count']),
+    [events, effectiveEventSearch]
   );
   const sortedEvents = useMemo(() => getSorted('events', filteredEvents), [filteredEvents, sortByNav]);
   const availableInsightTypes = useMemo(() => {
@@ -1307,10 +1368,9 @@ export default function App() {
   }
 
   function toggleNamespace(ns) {
-    setSelectedNamespaces((prev) => {
-      if (prev.includes(ns)) return prev.filter((x) => x !== ns);
-      return [...prev, ns];
-    });
+    selectNamespaces(selectedNamespaces.includes(ns)
+      ? selectedNamespaces.filter((item) => item !== ns)
+      : [...selectedNamespaces, ns]);
   }
 
   function handleNavChange(nextNav) {
@@ -1533,7 +1593,7 @@ export default function App() {
   }
 
   async function refreshAll() {
-    if (!api) return;
+    if (!api || routeBlocked) return;
 
     const refreshByNav = {
       pods: async () => {
@@ -1566,8 +1626,9 @@ export default function App() {
           setEvents([]);
           return;
         }
+        const requestID = ++eventRequestRef.current;
         const eventData = await api(`/api/events?namespace=${encodeURIComponent(namespaceQuery)}&limit=200`);
-        setEvents(eventData.items || []);
+        if (eventRequestRef.current === requestID) setEvents(eventData.items || []);
       },
       services: async () => {
         if (selectedNamespaces.length === 0) {
@@ -3382,7 +3443,7 @@ export default function App() {
 
   if (authBootstrapping) {
     return (
-      <LoginScreen
+      <LoginPage
         title=""
         message="Loading authentication..."
         usernameInput=""
@@ -3433,7 +3494,7 @@ export default function App() {
 
   if (!isLoggedIn) {
     return (
-      <LoginScreen
+      <LoginPage
         title=""
         message=""
         usernameInput={usernameInput}
@@ -3458,7 +3519,7 @@ export default function App() {
         clusterName={currentUser.clusterName}
         selectedNamespaces={selectedNamespaces}
         namespaces={namespaces}
-        setSelectedNamespaces={setSelectedNamespaces}
+        setSelectedNamespaces={selectNamespaces}
         toggleNamespace={toggleNamespace}
         visibleMenu={visibleMenu}
         expandedNavSections={expandedNavSections}
@@ -3496,7 +3557,9 @@ export default function App() {
           style={showBottomDock ? { flex: `0 0 ${(dockSplitRatio * 100).toFixed(1)}%` } : undefined}
         >
           <div key={activeNav} className={`nav-view ${isPodsView ? 'nav-view-pods' : ''}`}>
-          {showInitialNavLoader ? (
+          {routeForbidden ? <ForbiddenPage /> : activeNav === 'not-found' ? <NotFoundPage /> : !activeNav ? (
+            <div className="nav-loading-state"><strong>No available legacy pages</strong><button type="button" onClick={() => activateNav('dashboard')}>Open Dashboard</button></div>
+          ) : showInitialNavLoader ? (
             <div className="nav-loading-state">
               <strong>Loading {visibleNavItems.find((x) => x.id === activeNav)?.label || 'view'}...</strong>
               <span>Fetching data for this section.</span>
@@ -3599,8 +3662,8 @@ export default function App() {
 
           {activeNav === 'events' && (
             <EventsPage
-              eventSearch={eventSearch}
-              setEventSearch={setEventSearch}
+              eventSearch={effectiveEventSearch}
+              setEventSearch={updateEventSearch}
               sortedEvents={sortedEvents}
             />
           )}

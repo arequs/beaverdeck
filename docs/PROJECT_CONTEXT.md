@@ -25,7 +25,7 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 - Tokens have a fixed 12-hour expiry, a process-local signing key and a process-local session record. Restart invalidates them; authentication also rejects invalid signatures and missing or revoked records.
 - Local password reset increments the session version; deleting a local user or losing its role prevents authentication. Local role assignment and role permission changes are resolved on subsequent requests. External sessions retain their issued role but resolve its current definition; missing roles are rejected. Configuration snapshot application advances existing local session versions; failed persistence restores the previous configuration and exact versions.
 
-- Planned frontend routing preserves every existing logout, token-revocation and validation path: F5 still loses authentication, pagehide revocation remains best-effort, and return to the requested URL follows a new successful login. Bearer credentials stay in React memory, with unchanged API/SSE/Exec and login/OAuth transport. Only non-credential return metadata can persist. TypeScript/FSD/Steiger remain deferred; new page wrappers go directly under `ui/src`.
+- Initial frontend routing exposes Dashboard and Events, with login shown before authenticated content, permission-gated Events and a temporary `/legacy` area. Legacy selection is restricted to permitted non-routed pages; when none are available the empty view offers Dashboard. Events accepts namespace selection and search from its URL after sign-in, with explicit namespaces checked against current access before loading. Return navigation and integrated regression checks remain in progress. Existing logout, token-revocation and validation paths remain in force: F5 loses authentication and pagehide revocation is best-effort. Bearer credentials stay in React memory. TypeScript/FSD/Steiger remain deferred; routed page wrappers live under `ui/src/pages`.
 
 - `cmd/server/` contains the Go backend entrypoint and embeds the built frontend assets from `cmd/server/web/dist`.
 - `internal/api/` defines HTTP and WebSocket routes for auth, admin configuration, Kubernetes resources, manifests, logs, exec, node/workload/pod actions, and apply operations.
@@ -65,7 +65,7 @@ Auth/config flow:
 
 - Backend: Go `1.27.3`.
 - Go extension modules include `golang.org/x/net` `0.61.0` and `golang.org/x/text` `0.43.0`.
-- Frontend: React `19.3.0`, Vite `8.3.4`, lucide-react `1.54.0`, xterm.js with fit addon.
+- Frontend: React `19.3.0`, React Router `7.18.5`, Vite `8.3.4`, lucide-react `1.54.0`, xterm.js with fit addon.
 - Kubernetes: `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` `0.37.1`.
 - Storage: SQLite via `modernc.org/sqlite` `1.60.1` for non-auth runtime metadata.
 - Auth/OAuth: local users, Google OAuth, generic OpenID Connect, Azure Entra ID through OIDC, `golang.org/x/oauth2`.

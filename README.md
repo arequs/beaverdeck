@@ -27,9 +27,20 @@ Then open `http://localhost:8080`. On first start, BeaverDeck asks for the initi
 
 See chart details on [Artifact Hub](https://artifacthub.io/packages/search?repo=beaverdeck).
 
+## Navigation and direct links
+
+Routes are relative to the application base URL (including `BASE_PATH` when configured):
+
+- `/` opens Dashboard after sign-in; `/login` shows the sign-in screen.
+- `/dashboard` opens Dashboard.
+- `/events` opens Events. For example, `/events?namespace=production,staging&q=Warning` selects those namespaces and filters displayed events. Explicit namespace selections take priority over saved preferences and must be allowed by the current user's role. Without `namespace`, the existing allowed selection or default is used.
+- `/legacy` is the temporary area for all other workspace screens. It opens the first available legacy screen when loaded afresh; links to individual legacy screens are not yet supported. The sidebar continues to open those screens.
+
+Direct links require authentication and resource permissions. Refreshing loses the in-memory session and requires a new sign-in; the existing pagehide logout request is best-effort. The current URL remains available during a direct-link refresh, but restoring a destination after explicit logout or an external sign-in is still being implemented. Browser Back and Forward work between routed pages.
+
 ## Dashboard
 
-Every signed-in user lands on Dashboard. It combines a role-scoped health score with node and pod readiness, CPU and memory capacity bars, workload and PVC readiness, pod status distribution, top pod consumers, recent warning events, object inventory, and an Insights summary.
+Dashboard is the default page after sign-in from the application root or login page. It combines a role-scoped health score with node and pod readiness, CPU and memory capacity bars, workload and PVC readiness, pod status distribution, top pod consumers, recent warning events, object inventory, and an Insights summary.
 
 Dashboard does not introduce a separate permission. It is always present in the top-level navigation, but each panel and API request is enabled only when the signed-in role has View access to the underlying resource and selected namespace. Panels update independently as their data arrives. Insights categories are included only when the role can also view the source resources needed to calculate them and are evaluated together in one shared cluster scan; users without matching permissions see no data from those resources.
 

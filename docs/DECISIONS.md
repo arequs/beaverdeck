@@ -1,5 +1,9 @@
 # Technical Decisions
 
+## 2026-11-05 — React Router for initial routing
+
+Use pinned React Router 7.18.5 for route matching and history instead of a parallel navigation implementation. It supports the project's current Node and React requirements; TypeScript, FSD and Steiger remain deferred.
+
 ## 2026-11-05 — Runtime base path for routed SPA
 
 Inject the deployment prefix into the HTML entry as an escaped meta value and base URL. This keeps API, auth and asset addresses independent of the active page while preserving the existing forwarded-prefix trust model and root Vite proxy.
@@ -18,7 +22,7 @@ F5 still loses authentication and attempts the existing best-effort revocation. 
 
 ### Decision
 
-Stage 1 preserves the requested URL across existing authentication loss and returns only after new successful sign-in; it does not preserve authentication across F5. Defer TypeScript, FSD, and Steiger; place newly extracted page components directly in `ui/src` using JSX. Migrate page state and loading incrementally while preserving the shared workspace shell and BottomDock lifecycle.
+Stage 1 preserves the requested URL across existing authentication loss and returns only after new successful sign-in; it does not preserve authentication across F5. Defer TypeScript, FSD, and Steiger; place routed page components in `ui/src/pages` using JSX. Migrate page state and loading incrementally while preserving the shared workspace shell and BottomDock lifecycle.
 
 ### Status and consequences
 
