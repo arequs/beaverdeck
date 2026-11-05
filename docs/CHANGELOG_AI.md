@@ -1,56 +1,12 @@
 # AI Change Log
 
-## 2026-11-05 — Establish commit organization rules
+## 2026-11-06 — Add initial routing and return navigation
 
-Documented Conventional Commit naming and grouping completed work by the order of task blocks, while preserving local planning materials.
+Added React Router navigation for login, Dashboard, Events and a temporary legacy area, with runtime base-path support, permission-checked Events URL filters and validated return after a fresh sign-in. Existing Bearer authentication, logout and token-validation rules remain unchanged; later page migrations must retain their regression gate.
 
-## 2026-11-05 — Document current navigation routes
+Validated root and prefixed deployments, local sign-in, logout, F5, expiry, restart, 401, permissions, browser history, API/SSE/Exec credentials and delivered logout replay. Go tests, vet, frontend build and routing tests passed; the user verified the deployed minikube application. Google, OIDC and Entra handoffs were simulated because live providers were unavailable. Pagehide revocation remains best-effort.
 
-Documented Dashboard, Events URL filters and the temporary legacy route, including its screen-restoration limitation and current sign-in behavior. Rebuilt the frontend and verified the documented URLs and embedded assets through temporary production Go servers at root and `/beaverdeck`; the test pods were removed.
-
-## 2026-11-05 — Connect Events URL filters
-
-Events applies explicit namespace and search parameters after fresh authentication; namespace permissions are checked before loading and controls update the URL. Older Events responses cannot replace a newer selection. Firefox with a test API covered saved defaults, explicit and forbidden selections, search, and refresh followed by sign-in. Frontend build and path tests passed.
-
-## 2026-11-05 — Verify legacy workspace navigation
-
-Kept legacy selection limited to available non-routed sections and added a Dashboard action when none are available. Firefox checks with a test API covered browser history, Pods, dock persistence, log stream cancellation and resumption, and the absence of pagehide/logout during internal navigation. The frontend build passed.
-
-## 2026-11-05 — Group routed pages under src/pages
-
-Moved the new routed page wrappers and route messages into `ui/src/pages` and updated their imports. Existing presentation components remain in `ui/src/components`; route and authentication behavior is unchanged.
-
-## 2026-11-05 — Add initial routed pages
-
-Connected the workspace to browser routing with JSX wrappers for login, Dashboard and Events, plus forbidden and not-found views. Direct links require login and Events permissions are checked before resource loading; legacy sections use a temporary route. Verified initial access, Dashboard default, forbidden requests, not-found, browser history and legacy navigation in Firefox with a test API. Destination return and Events query integration are still pending.
-
-## 2026-11-05 — Keep planning materials local
-
-Excluded local planning files from version control and documented that policy in agent guidance. Removed references to local artifacts from tracked project documentation; implementation and authentication behavior are unchanged.
-
-## 2026-11-05 — Add React Router dependency
-
-Pinned React Router 7.18.5 for the planned declarative route migration. Its Node 20+ and React 18+ requirements fit the existing toolchain; version 8 requires a newer Node 22 patch level. The frontend build passed. No routes were changed in this step.
-
-## 2026-11-05 — Verify production serving under a prefix
-
-Built the frontend and a production Go binary and checked separate temporary root and `/beaverdeck` pods: HTML and all referenced assets, local login, Bearer API and SSE, Exec WebSocket upgrade, and logout/replay. The Vite API/WebSocket proxy and prefix guidance remain in place. The test image used the locally built binary; the full Dockerfile build was interrupted during slow base-image downloads.
-
-## 2026-11-05 — Begin runtime base-path support
-
-The SPA entry now supplies a runtime base path for frontend URLs and relative assets, independently of the current route. Actual files are served directly; browser navigation, including dotted paths, falls back to the SPA, while missing assets and API or health subpaths return 404. Existing Vite development defaults and API proxy remain in place. Routing integration and acceptance remain pending.
-
-## 2026-11-05 — Verify refresh authentication baseline
-
-Verified with the user and a temporary diagnostic proxy that a protected request returned 200 before F5, pagehide logout reached the backend and returned 200, and replay returned 401. F5 showed login; the user confirmed no token or password in browser local/session storage. Logout delivery remains best-effort. No runtime behavior changed.
-
-## 2026-11-05 — Extend session regression coverage
-
-Added focused coverage for signature validation, missing session records and password-reset session version invalidation. Existing rollback and logout tests remain unchanged.
-
-## 2026-11-05 — Document authentication migration baseline
-
-Recorded the existing logout, expiry, restart, credential transport and configuration invalidation behavior in project context for the routing migration. No runtime behavior changed. Browser verification remains pending.
+Documented Conventional Commit grouping and kept planning materials local. Updated minikube to the current build while retaining its authentication configuration.
 
 ## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
 
@@ -1854,30 +1810,3 @@ the client only cleared local React state.
 ### Follow-ups
 
 - None.
-
-
-## 2026-11-06 — Restore routes after a fresh sign-in
-
-Added validated return destinations for local and external sign-in without persisting credentials or changing logout. Updated route documentation and navigation tests. Live external-provider verification remains outstanding.
-
-Clarified the destination validator with named checks, explicit branches, and comments describing its security boundaries; validation behavior remains unchanged.
-
-Centralized the shared login route and auth API routes under `ui/src/shared/routes/` and reused them in navigation, requests, and destination validation.
-
-Simplified return validation to one path decoding pass and removed filtering of encoded separators and query parameter names. Query parameters can now be retained as navigation metadata regardless of their names.
-
-Verified local return navigation in Firefox with a mock API: manual logout, refresh, and a protected request returning 401 each require a fresh login before returning to Events. Manual logout and refresh sent Bearer logout requests; the 401 flow did not issue another logout request.
-
-Verified simulated Google, OIDC, and Entra callback handoffs in Firefox and prefix-scoped return metadata. Added backend tests for provider state validation and existing callback URIs. Live external-provider authentication remains unverified.
-
-Verified in Firefox with a mock API that login refresh, repeated failed sign-ins, provider errors, and bootstrap retain the destination. Returning uses the new user's permissions; blocked session storage preserves local return and makes external sign-in fall back to Dashboard.
-
-Documented return navigation, fresh-authentication requirements, and the blocked-storage fallback. Rebuilt the frontend and checked the production Go SPA handler in Firefox at root and `/beaverdeck` with a mock API and simulated external provider.
-
-Completed the available integrated authentication and navigation checks at root and `/beaverdeck`. Firefox against isolated production pods with the real API confirmed fresh local sign-in after F5 and manual logout, destination restoration, and token rejection after logout. Mock-API checks covered 401, full-document navigation, tab close, forbidden and unknown pages, and Back/Forward. Firefox did not deliver the best-effort pagehide logout when the tested tab closed. A temporary Go test verified the 12-hour token lifetime, expired-token rejection, and rejection by a new store instance. Firefox against a separate test build with a 30-second token lifetime confirmed that both expiry and a real server restart reject the old token, require a new login, and restore the destination at both paths. Restart checks verified the rejected token had not yet expired. Live Google, OIDC, and Entra checks were unavailable; earlier provider handoffs used simulated providers. Temporary test pods and Secrets were removed.
-
-Compared authentication and transport code with the pre-routing baseline and checked Firefox against isolated real-API pods at root and `/beaverdeck`: local login set no session cookie, credentials were absent from browser storage, F5 required login, and the delivered pagehide logout made token replay return 401. Real browser SSE used Bearer credentials and Exec used the existing WebSocket query credentials. OAuth state cookies remain separate from session transport; live external providers were unavailable. Return navigation deliberately preserves supplied query parameters, so credentials placed in a URL can also be retained as navigation metadata. Focused Go and frontend tests passed; temporary pods and Secrets were removed.
-
-Ran the full Go test suite and `go vet ./...` after rebuilding the frontend. Repeated builds produced identical embedded asset hashes; focused authentication and frontend routing tests passed, as did `git diff --check`. The build reported existing module-level `use client` warnings. Helm checks were not needed because chart files were unchanged.
-
-Updated project memory and local implementation guidance to distinguish completed initial routing and return navigation from later page migration. Kept the existing authentication lifecycle and regression gate for every subsequent stage, documented unavailable live provider checks, and clarified that session records are in server memory rather than durable storage.

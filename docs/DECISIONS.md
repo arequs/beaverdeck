@@ -1,32 +1,12 @@
 # Technical Decisions
 
-## 2026-11-05 — React Router for initial routing
+## 2026-11-06 — Incremental routing without changing authentication
 
-Use pinned React Router 7.18.5 for route matching and history instead of a parallel navigation implementation. It supports the project's current Node and React requirements; TypeScript, FSD and Steiger remain deferred.
+Use React Router for incremental page migration, with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. The Go SPA entry injects an escaped runtime base path; Dashboard remains the default, Events is the pilot, and other pages use the temporary legacy area. TypeScript, FSD and Steiger remain deferred.
 
-## 2026-11-05 — Runtime base path for routed SPA
+Preserve all existing login, Bearer transport, logout, token validation and invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, and a return destination opens only after a new successful sign-in. Local sign-in carries the validated destination in the URL; external sign-in uses prefix-scoped tab-local metadata and falls back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; no session cookie, persistent session credentials or silent refresh restoration is introduced.
 
-Inject the deployment prefix into the HTML entry as an escaped meta value and base URL. This keeps API, auth and asset addresses independent of the active page while preserving the existing forwarded-prefix trust model and root Vite proxy.
-
-## 2026-11-05 — Preserve Authentication Lifecycle Throughout Frontend Migration
-
-### Decision
-
-The user's latest explicit instruction supersedes the earlier cookie/refresh-restoration planning choice. All existing logout triggers, token revocation, validation rules and their current guarantees must stay unchanged through every migration stage. Keep Bearer transport, React-memory-only credentials, existing local/OAuth handoff, pagehide keepalive revocation, manual logout, 401 cleanup, absolute 12h expiry, process-local sessions and all existing user/role/password/configuration invalidation and rollback semantics.
-
-### Consequences
-
-F5 still loses authentication and attempts the existing best-effort revocation. Routing retains only pathname/query and returns after a new successful sign-in. No HttpOnly session cookie, persistent credentials or silent refresh restoration is introduced. Existing OAuth state cookies remain. Navigation-only return metadata may persist for an external-provider round trip. Every later stage must regress the original logout/validation matrix. The 2026-09-11 revoke-on-refresh decision remains in force.
-
-## 2026-11-05 — Plan Incremental Frontend Routing And Session Restoration
-
-### Decision
-
-Stage 1 preserves the requested URL across existing authentication loss and returns only after new successful sign-in; it does not preserve authentication across F5. Defer TypeScript, FSD, and Steiger; place routed page components in `ui/src/pages` using JSX. Migrate page state and loading incrementally while preserving the shared workspace shell and BottomDock lifecycle.
-
-### Status and consequences
-
-Initial routing and return navigation are implemented, with Events as the pilot. Dashboard remains the default when no destination is retained; the revoke-on-refresh policy and all other authentication/logout rules remain unchanged. The earlier cookie choice is cancelled by the latest decision above. Independent Events data ownership and later page migrations remain future work.
+Validate return paths once against the application prefix, forbidden characters, traversal and auth routes. Query parameter names are not filtered, so credentials must not be placed in URLs. Every later stage must rerun the existing logout and invalidation regression matrix, including expiry, restart, 401, user/role/password/config changes and API/SSE/Exec transport.
 
 ## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
 
@@ -762,12 +742,3 @@ still not synchronized across replicas (`replicas: 1` is pinned). Two logins for
 same wall-clock second could in rare cases collide onto one session record; this is an accepted, documented
 limitation, not a regression introduced silently. There is still no sliding idle timeout — an open, unused tab stays
 valid for the full 12h `sessionTokenTTL`.
-
-
-## 2026-11-06 — Retain navigation without retaining authentication
-
-Return destinations are validated internal paths and queries. Local sign-in keeps them in the login URL; external sign-in uses prefix-scoped tab-local navigation metadata. Blocked metadata storage falls back to Dashboard for external sign-in. Credentials and existing logout behavior remain unchanged.
-
-Shared frontend routes are grouped by purpose under `ui/src/shared/routes/`. The login route and auth API prefix used by destination validation are defined alongside the routes used by navigation and requests, so their security boundaries stay aligned.
-
-Return validation decodes the path once and checks its characters, segments, application prefix, and auth routes. Query parameter names are not filtered; the destination query can therefore be retained in tab-local navigation metadata during external sign-in.
