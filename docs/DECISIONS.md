@@ -2,9 +2,9 @@
 
 ## 2026-11-06 — Incremental routing without changing authentication
 
-Use React Router for incremental page migration, with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. The Go SPA entry injects an escaped runtime base path; Dashboard remains the default, Events is the pilot, and other pages use the reserved `/_workspace` route. The underscore distinguishes this temporary area from future page routes. TypeScript, FSD and Steiger remain deferred.
+Use React Router with routed JSX pages in `ui/src/pages`, shared routes in `ui/src/shared/routes` and an escaped runtime base path. Dashboard is the default, Events is the pilot, and other screens use the reserved `/_workspace` route until migrated. TypeScript, FSD and Steiger remain deferred.
 
-Preserve all existing login, Bearer transport, logout, token validation and invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, and a return destination opens only after a new successful sign-in. Local sign-in carries the validated destination in the URL; external sign-in uses prefix-scoped tab-local metadata and falls back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; no session cookie, persistent session credentials or silent refresh restoration is introduced.
+Preserve existing login, Bearer transport, logout and token invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, while a 401 clears client state without another remote logout. Return navigation requires a fresh sign-in and uses prefix-scoped tab-local metadata for external providers, falling back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; session cookies and silent authentication restoration are not introduced.
 
 Validate return paths once against the application prefix, forbidden characters, traversal and auth routes. Query parameter names are not filtered, so credentials must not be placed in URLs. Every later stage must rerun the existing logout and invalidation regression matrix, including expiry, restart, 401, user/role/password/config changes and API/SSE/Exec transport.
 
