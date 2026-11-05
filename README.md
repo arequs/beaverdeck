@@ -99,7 +99,7 @@ The Helm chart enables this by default. Configure it with `restartDiagnostics.*`
 - Suppressed Insights storage: Kubernetes ConfigMap
 - Local runtime metadata: SQLite in `DATA_DIR` for non-auth data such as update-check status
 
-Bearer login tokens are signed in memory and are not stored server-side. A pod restart requires users to sign in again.
+Bearer login tokens are signed in memory; session records are held only in server memory and are not persisted. A pod restart requires users to sign in again.
 
 ## Authentication Configuration
 

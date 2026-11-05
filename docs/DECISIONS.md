@@ -26,7 +26,7 @@ Stage 1 preserves the requested URL across existing authentication loss and retu
 
 ### Status and consequences
 
-Routing is not yet implemented. Dashboard remains the default when no destination is retained; the revoke-on-refresh policy and all other authentication/logout rules remain unchanged. The earlier cookie choice is cancelled by the latest decision above. Events is the proposed pilot.
+Initial routing and return navigation are implemented, with Events as the pilot. Dashboard remains the default when no destination is retained; the revoke-on-refresh policy and all other authentication/logout rules remain unchanged. The earlier cookie choice is cancelled by the latest decision above. Independent Events data ownership and later page migrations remain future work.
 
 ## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
 
