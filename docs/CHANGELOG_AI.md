@@ -1,5 +1,21 @@
 # AI Change Log
 
+## 2026-11-05 — Keep planning materials local
+
+Excluded local planning files from version control and documented that policy in agent guidance. Removed references to local artifacts from tracked project documentation; implementation and authentication behavior are unchanged.
+
+## 2026-11-05 — Verify refresh authentication baseline
+
+Verified with the user and a temporary diagnostic proxy that a protected request returned 200 before F5, pagehide logout reached the backend and returned 200, and replay returned 401. F5 showed login; the user confirmed no token or password in browser local/session storage. Logout delivery remains best-effort. No runtime behavior changed.
+
+## 2026-11-05 — Extend session regression coverage
+
+Added focused coverage for signature validation, missing session records and password-reset session version invalidation. Existing rollback and logout tests remain unchanged.
+
+## 2026-11-05 — Document authentication migration baseline
+
+Recorded the existing logout, expiry, restart, credential transport and configuration invalidation behavior in project context for the routing migration. No runtime behavior changed. Browser verification remains pending.
+
 ## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
 
 ### Summary
@@ -1782,8 +1798,6 @@ OIDC (including Entra ID) providers.
 - `internal/users/session_lifecycle_test.go`
 - `cmd/server/main.go` (starts the session sweeper)
 - `ui/src/hooks/useAuthSession.js` (`pagehide` handler)
-- `openspec/specs/auth/session-lifecycle/spec.md` and the archived change under
-  `openspec/changes/archive/2026-09-11-tab-scoped-session-expiry/`
 - project memory files (`docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`)
 
 ### Reason

@@ -1,5 +1,25 @@
 # Technical Decisions
 
+## 2026-11-05 — Preserve Authentication Lifecycle Throughout Frontend Migration
+
+### Decision
+
+The user's latest explicit instruction supersedes the earlier cookie/refresh-restoration planning choice. All existing logout triggers, token revocation, validation rules and their current guarantees must stay unchanged through every migration stage. Keep Bearer transport, React-memory-only credentials, existing local/OAuth handoff, pagehide keepalive revocation, manual logout, 401 cleanup, absolute 12h expiry, process-local sessions and all existing user/role/password/configuration invalidation and rollback semantics.
+
+### Consequences
+
+F5 still loses authentication and attempts the existing best-effort revocation. Routing retains only pathname/query and returns after a new successful sign-in. No HttpOnly session cookie, persistent credentials or silent refresh restoration is introduced. Existing OAuth state cookies remain. Navigation-only return metadata may persist for an external-provider round trip. Every later stage must regress the original logout/validation matrix. The 2026-09-11 revoke-on-refresh decision remains in force.
+
+## 2026-11-05 — Plan Incremental Frontend Routing And Session Restoration
+
+### Decision
+
+Stage 1 preserves the requested URL across existing authentication loss and returns only after new successful sign-in; it does not preserve authentication across F5. Defer TypeScript, FSD, and Steiger; place newly extracted page components in `ui/src/pages` using JSX. Migrate page state and loading incrementally while preserving the shared workspace shell and BottomDock lifecycle.
+
+### Status and consequences
+
+Routing is not yet implemented. Dashboard remains the default when no destination is retained; the revoke-on-refresh policy and all other authentication/logout rules remain unchanged. The earlier cookie choice is cancelled by the latest decision above. Events is the proposed pilot.
+
 ## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
 
 ### Context
@@ -716,9 +736,7 @@ in React state only (no `sessionStorage`) and additionally sends a best-effort
 so logout, `F5`, and tab close all revoke the token the same way. A background `StartSessionSweeper` goroutine
 (hourly, modeled on the `restart_diagnostics.go` sampling loop) deletes revoked/expired records so the map stays
 bounded. Same mechanism for every `authSource`: local, Google OAuth, OIDC (including Entra ID).
-Deliberately not introduced: a sliding idle timeout, and federated/global logout at the external provider — see
-`openspec/specs/auth/session-lifecycle/spec.md` and the archived change's `design.md` for the full rationale,
-including the accepted same-wall-clock-second token-collision limitation from keying sessions by the token itself.
+Deliberately not introduced: a sliding idle timeout and federated/global logout at the external provider. Keying sessions by token retains the accepted same-wall-clock-second token-collision limitation.
 
 ### Rationale
 
