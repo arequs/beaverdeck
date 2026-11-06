@@ -190,3 +190,74 @@ func TestOAuthStateCookieSelectsOnlyMatchingProvider(t *testing.T) {
 		t.Fatal("generic OIDC state cookie must not match the Entra callback state")
 	}
 }
+
+func TestOAuthCallbackRequiresMatchingStateAndCode(t *testing.T) {
+	for _, cookieName := range []string{googleAuthStateCookie, oidcAuthStateCookie, entraAuthStateCookie} {
+		for _, tc := range []struct {
+			name, query, cookie string
+			wantCode            string
+		}{
+			{name: "valid", query: "state=expected&code=auth-code", cookie: "expected", wantCode: "auth-code"},
+			{name: "missing cookie", query: "state=expected&code=auth-code"},
+			{name: "wrong state", query: "state=other&code=auth-code", cookie: "expected"},
+			{name: "missing state", query: "code=auth-code", cookie: "expected"},
+			{name: "missing code", query: "state=expected", cookie: "expected"},
+		} {
+			t.Run(cookieName+"/"+tc.name, func(t *testing.T) {
+				request := httptest.NewRequest(http.MethodGet, "/callback?"+tc.query, nil)
+				if tc.cookie != "" {
+					request.AddCookie(&http.Cookie{Name: cookieName, Value: tc.cookie})
+				}
+				code, err := validateOAuthCallback(request, cookieName)
+				if tc.wantCode == "" {
+					if err == nil {
+						t.Fatalf("expected invalid callback to fail, got code %q", code)
+					}
+				} else if err != nil || code != tc.wantCode {
+					t.Fatalf("expected code %q, got %q, error %v", tc.wantCode, code, err)
+				}
+			})
+		}
+	}
+}
+
+func TestOAuthRedirectURIsPreserveProviderCallbacks(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "http://internal/api/auth/oidc/start", nil)
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-Host", "example.test")
+	request.Header.Set("X-Forwarded-Prefix", "/beaverdeck")
+
+	for _, tc := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"Google", googleRedirectURI(request), "https://example.test/beaverdeck/api/auth/google/callback"},
+		{"OIDC", oidcRedirectURI(request), "https://example.test/beaverdeck/api/auth/oidc/callback"},
+		{"Entra", entraRedirectURI(request), "https://example.test/beaverdeck/api/auth/oidc/callback"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Fatalf("got %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAuthRedirectUsesForwardedPrefix(t *testing.T) {
+	for _, basePath := range []string{"", "/beaverdeck"} {
+		t.Run("base="+basePath, func(t *testing.T) {
+			s := &Server{cfg: config.Config{BasePath: basePath}}
+			request := httptest.NewRequest(http.MethodGet, "http://internal/api/auth/oidc/callback", nil)
+			request.Header.Set("X-Forwarded-Prefix", basePath)
+			response := httptest.NewRecorder()
+			s.redirectAuthResult(response, request, "admin", "token", nil)
+			if got, want := response.Header().Get("Location"), basePath+"/#auth_session=token&auth_user=admin"; got != want {
+				t.Fatalf("got redirect %q, want %q", got, want)
+			}
+			if got, want := oidcRedirectURI(request), "http://internal"+basePath+"/api/auth/oidc/callback"; got != want {
+				t.Fatalf("got callback %q, want %q", got, want)
+			}
+		})
+	}
+}

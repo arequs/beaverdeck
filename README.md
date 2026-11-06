@@ -27,9 +27,19 @@ Then open `http://localhost:8080`. On first start, BeaverDeck asks for the initi
 
 See chart details on [Artifact Hub](https://artifacthub.io/packages/search?repo=beaverdeck).
 
+## Navigation and direct links
+
+Pages are gradually moving to direct routes relative to the application base URL, including `BASE_PATH` when configured. During this transition, `/_workspace` is shared by screens without their own routes. They remain available through the sidebar; opening that URL directly selects the first available workspace screen.
+
+Some pages retain filters in the URL. Explicit namespace selections take priority over saved preferences and must be allowed by the current user's role.
+
+Direct links require authentication and resource permissions. After a refresh, explicit logout, or session expiry, the requested path and query are retained for a new successful sign-in. Refreshing loses the in-memory session and never restores authentication; the existing pagehide logout request is best-effort. The destination is subject to the new user's permissions. Browser Back and Forward work between routed pages.
+
+External sign-in stores the destination in tab-local session storage during the provider redirect. If that storage is unavailable, external sign-in still works and opens Dashboard; local sign-in can still return to the requested address. Query parameters are retained as supplied, so avoid putting credentials in URLs.
+
 ## Dashboard
 
-Every signed-in user lands on Dashboard. It combines a role-scoped health score with node and pod readiness, CPU and memory capacity bars, workload and PVC readiness, pod status distribution, top pod consumers, recent warning events, object inventory, and an Insights summary.
+Dashboard is the default page after sign-in from the application root or login page. It combines a role-scoped health score with node and pod readiness, CPU and memory capacity bars, workload and PVC readiness, pod status distribution, top pod consumers, recent warning events, object inventory, and an Insights summary.
 
 Dashboard does not introduce a separate permission. It is always present in the top-level navigation, but each panel and API request is enabled only when the signed-in role has View access to the underlying resource and selected namespace. Panels update independently as their data arrives. Insights categories are included only when the role can also view the source resources needed to calculate them and are evaluated together in one shared cluster scan; users without matching permissions see no data from those resources.
 
@@ -86,7 +96,7 @@ The Helm chart enables this by default. Configure it with `restartDiagnostics.*`
 - Suppressed Insights storage: Kubernetes ConfigMap
 - Local runtime metadata: SQLite in `DATA_DIR` for non-auth data such as update-check status
 
-Bearer login tokens are signed in memory and are not stored server-side. A pod restart requires users to sign in again.
+Bearer login tokens are signed in memory; session records are held only in server memory and are not persisted. A pod restart requires users to sign in again.
 
 ## Authentication Configuration
 

@@ -1,5 +1,11 @@
 # AI Change Log
 
+## 2026-11-06 — Add initial routing and return navigation
+
+Added routes for login, Dashboard, Events and `/_workspace`, permission-checked Events filters, return navigation after sign-in and Dashboard links on route error pages. Routed navigation uses a shared mapping. Existing authentication and logout behavior remains unchanged.
+
+Go tests, vet, frontend build and routing tests passed. Browser and API checks covered root and prefixed deployments, authentication loss and return, permissions, navigation and API/SSE/Exec transport; the user verified the application in minikube. Live Google, OIDC and Entra providers were unavailable, so their handoffs were simulated. Pagehide revocation remains best-effort.
+
 ## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
 
 ### Summary
@@ -1782,8 +1788,6 @@ OIDC (including Entra ID) providers.
 - `internal/users/session_lifecycle_test.go`
 - `cmd/server/main.go` (starts the session sweeper)
 - `ui/src/hooks/useAuthSession.js` (`pagehide` handler)
-- `openspec/specs/auth/session-lifecycle/spec.md` and the archived change under
-  `openspec/changes/archive/2026-09-11-tab-scoped-session-expiry/`
 - project memory files (`docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`)
 
 ### Reason

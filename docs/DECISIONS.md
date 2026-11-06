@@ -1,5 +1,13 @@
 # Technical Decisions
 
+## 2026-11-06 — Incremental routing without changing authentication
+
+Use React Router with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. The SPA uses `BASE_PATH`; external authentication retains the existing forwarded-prefix behavior. Dashboard is the default, Events is the pilot, and other screens use the reserved `/_workspace` route until migrated. TypeScript, FSD and Steiger remain deferred.
+
+Preserve existing login, Bearer transport, logout and token invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, while a 401 clears client state without another remote logout. Return navigation requires a fresh sign-in and uses prefix-scoped tab-local metadata for external providers, falling back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; session cookies and silent authentication restoration are not introduced.
+
+Validate return paths once against the application prefix, forbidden characters, traversal and auth routes. Query parameter names are not filtered, so credentials must not be placed in URLs. Every later stage must rerun the existing logout and invalidation regression matrix, including expiry, restart, 401, user/role/password/config changes and API/SSE/Exec transport.
+
 ## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
 
 ### Context
@@ -716,9 +724,7 @@ in React state only (no `sessionStorage`) and additionally sends a best-effort
 so logout, `F5`, and tab close all revoke the token the same way. A background `StartSessionSweeper` goroutine
 (hourly, modeled on the `restart_diagnostics.go` sampling loop) deletes revoked/expired records so the map stays
 bounded. Same mechanism for every `authSource`: local, Google OAuth, OIDC (including Entra ID).
-Deliberately not introduced: a sliding idle timeout, and federated/global logout at the external provider — see
-`openspec/specs/auth/session-lifecycle/spec.md` and the archived change's `design.md` for the full rationale,
-including the accepted same-wall-clock-second token-collision limitation from keying sessions by the token itself.
+Deliberately not introduced: a sliding idle timeout and federated/global logout at the external provider. Keying sessions by token retains the accepted same-wall-clock-second token-collision limitation.
 
 ### Rationale
 

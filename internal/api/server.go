@@ -2,9 +2,10 @@ package api
 
 import (
 	"embed"
+	"html"
+	"io"
 	"io/fs"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"beaverdeck/internal/config"
@@ -124,15 +125,27 @@ func (s *Server) Routes() http.Handler {
 
 	fileServer := http.FileServer(s.fs)
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/healthz/") {
 			http.NotFound(w, r)
 			return
 		}
-		if !strings.Contains(filepath.Base(r.URL.Path), ".") {
-			r = r.Clone(r.Context())
-			r.URL.Path = "/"
+		if r.URL.Path == "/index.html" {
+			s.serveSPA(w, r)
+			return
 		}
-		fileServer.ServeHTTP(w, r)
+		if f, err := s.fs.Open(r.URL.Path); err == nil {
+			info, statErr := f.Stat()
+			_ = f.Close()
+			if statErr == nil && !info.IsDir() {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		if strings.HasPrefix(r.URL.Path, "/assets/") || (r.URL.Path != "/" && !strings.Contains(r.Header.Get("Accept"), "text/html")) {
+			http.NotFound(w, r)
+			return
+		}
+		s.serveSPA(w, r)
 	}))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -141,4 +154,23 @@ func (s *Server) Routes() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
+	f, err := s.fs.Open("/index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	index, err := io.ReadAll(f)
+	if err != nil {
+		http.Error(w, "unable to read application", http.StatusInternalServerError)
+		return
+	}
+	escaped := html.EscapeString(s.cfg.BasePath)
+	entry := `<base href="` + escaped + `/"><meta name="beaverdeck-base-path" content="` + escaped + `">`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.WriteString(w, strings.Replace(string(index), "<head>", "<head>"+entry, 1))
 }
