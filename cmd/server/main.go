@@ -68,6 +68,9 @@ func main() {
 			return
 		}
 		if cfg.BasePath != "" {
+			if r.Header.Get("X-Forwarded-Prefix") == "" {
+				r.Header.Set("X-Forwarded-Prefix", cfg.BasePath)
+			}
 			if r.URL.Path == cfg.BasePath {
 				http.Redirect(w, r, cfg.BasePath+"/", http.StatusMovedPermanently)
 				return

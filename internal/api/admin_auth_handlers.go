@@ -49,7 +49,7 @@ func (s *Server) adminGoogleConfigTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	redirectURI := s.googleRedirectURI(r)
+	redirectURI := googleRedirectURI(r)
 	if strings.TrimSpace(req.ClientID) == "" || strings.TrimSpace(req.ClientSecret) == "" {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("google client id/client secret are not configured"))
 		return
@@ -183,10 +183,10 @@ func (s *Server) adminExternalOIDCConfigTest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	providerName := "OpenID Connect"
-	redirectURI := s.oidcRedirectURI(r)
+	redirectURI := oidcRedirectURI(r)
 	if entra {
 		providerName = "Azure Entra ID"
-		redirectURI = s.entraRedirectURI(r)
+		redirectURI = entraRedirectURI(r)
 	}
 	if strings.TrimSpace(req.IssuerURL) == "" || strings.TrimSpace(req.ClientID) == "" || strings.TrimSpace(req.ClientSecret) == "" {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("%s issuer/client id/client secret are not configured", providerName))
