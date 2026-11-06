@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router';
-import { DASHBOARD_ROUTE, EVENTS_ROUTE, LOGIN_ROUTE, WORKSPACE_ROUTE } from './shared/routes/index.js';
-import { activeNavigation, eventNamespacesFromSearch, namespaceSelectionMatches } from './lib/navigation.js';
+import { LOGIN_ROUTE, WORKSPACE_ROUTE } from './shared/routes/index.js';
+import { activeNavigation, eventNamespacesFromSearch, isRoutedNavigation, namespaceSelectionMatches, navigationPath } from './lib/navigation.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -657,13 +657,12 @@ export default function App() {
   const activateNav = useCallback((nextNav) => {
     if (!nextNav) return;
     expandNavSectionForNav(nextNav);
-    if (nextNav === 'dashboard' || nextNav === 'events') {
-      const path = nextNav === 'dashboard' ? DASHBOARD_ROUTE : EVENTS_ROUTE;
-      if (location.pathname !== path) navigate(path);
-    } else {
+    const hasOwnRoute = isRoutedNavigation(nextNav);
+    if (!hasOwnRoute) {
       setWorkspaceNav(nextNav);
-      if (!isWorkspaceRoute) navigate(WORKSPACE_ROUTE);
     }
+    const path = navigationPath(nextNav);
+    if (hasOwnRoute ? location.pathname !== path : !isWorkspaceRoute) navigate(path);
   }, [expandNavSectionForNav, isWorkspaceRoute, location.pathname, navigate]);
   const toggleNavSection = useCallback((section) => {
     setExpandedNavSections((prev) => {
@@ -816,7 +815,7 @@ export default function App() {
   }, [activeNav, namespaceQuery, isLoggedIn, token, podsAutoRefreshEnabled, podsAutoRefreshSeconds]);
 
   useEffect(() => {
-    const workspaceItems = visibleNavItems.filter((item) => item.id !== 'dashboard' && item.id !== 'events');
+    const workspaceItems = visibleNavItems.filter((item) => !isRoutedNavigation(item.id));
     if (isLoggedIn && isWorkspaceRoute && !workspaceItems.some((item) => item.id === workspaceNav)) {
       const fallback = workspaceItems[0]?.id || '';
       if (workspaceNav !== fallback) setWorkspaceNav(fallback);

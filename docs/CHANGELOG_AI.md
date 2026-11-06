@@ -2,7 +2,7 @@
 
 ## 2026-11-06 — Add initial routing and return navigation
 
-Added routes for login, Dashboard, Events and `/_workspace`, permission-checked Events filters, return navigation after sign-in and Dashboard links on route error pages. SPA and external authentication share `BASE_PATH`; authentication and logout behavior remains unchanged.
+Added routes for login, Dashboard, Events and `/_workspace`, permission-checked Events filters, return navigation after sign-in and Dashboard links on route error pages. Routed navigation uses a shared mapping. SPA and external authentication share `BASE_PATH`; authentication and logout behavior remains unchanged.
 
 Go tests, vet, frontend build and routing tests passed. Browser and API checks covered root and prefixed deployments, authentication loss and return, permissions, navigation and API/SSE/Exec transport; the user verified the application in minikube. Live Google, OIDC and Entra providers were unavailable, so their handoffs were simulated. Pagehide revocation remains best-effort.
 
