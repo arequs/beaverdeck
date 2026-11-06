@@ -1,9 +1,20 @@
 import React from 'react';
+import { Link } from 'react-router';
+
+function RouteMessage({ title, message }) {
+  return (
+    <div className="nav-loading-state">
+      <strong>{title}</strong>
+      <span>{message}</span>
+      <Link to="/">Go to Dashboard</Link>
+    </div>
+  );
+}
 
 export function ForbiddenPage() {
-  return <div className="nav-loading-state"><strong>Access denied</strong><span>You do not have access to this page or namespace.</span></div>;
+  return <RouteMessage title="Access denied" message="You do not have access to this page or namespace." />;
 }
 
 export function NotFoundPage() {
-  return <div className="nav-loading-state"><strong>Page not found</strong><span>The requested page does not exist.</span></div>;
+  return <RouteMessage title="Page not found" message="The requested page does not exist." />;
 }

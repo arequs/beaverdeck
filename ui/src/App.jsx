@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router';
-import { LOGIN_ROUTE, WORKSPACE_ROUTE } from './shared/routes/index.js';
+import { DASHBOARD_ROUTE, EVENTS_ROUTE, LOGIN_ROUTE, WORKSPACE_ROUTE } from './shared/routes/index.js';
+import { activeNavigation, eventNamespacesFromSearch, namespaceSelectionMatches } from './lib/navigation.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -214,9 +215,7 @@ export default function App() {
 
   const [workspaceNav, setWorkspaceNav] = useState('');
   const isWorkspaceRoute = Boolean(matchPath(WORKSPACE_ROUTE, location.pathname));
-  const activeNav = matchPath('/events', location.pathname) ? 'events'
-    : (matchPath('/dashboard', location.pathname) || matchPath('/', location.pathname) || matchPath(LOGIN_ROUTE, location.pathname)) ? 'dashboard'
-      : isWorkspaceRoute ? workspaceNav : 'not-found';
+  const activeNav = activeNavigation(location.pathname, workspaceNav);
   const [expandedNavSections, setExpandedNavSections] = useState(() => new Set(DEFAULT_EXPANDED_NAV_SECTIONS));
   const [loadedNavs, setLoadedNavs] = useState({});
   const [initialNavLoading, setInitialNavLoading] = useState('');
@@ -609,18 +608,21 @@ export default function App() {
     [isAdmin, userPermissions, crds, helmReleases, argoCDApplications]
   );
   const visibleNavItems = useMemo(() => visibleMenu.flatMap((group) => group.items), [visibleMenu]);
-  const eventParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const requestedEventNamespaces = useMemo(() => eventParams.has('namespace')
-    ? [...new Set(eventParams.get('namespace').split(',').map((ns) => ns.trim()).filter(Boolean))]
-    : null, [eventParams]);
-  const routeForbidden = activeNav === 'events' && (!canAccessNav('events') ||
-    (requestedEventNamespaces !== null && requestedEventNamespaces.some((ns) => !namespaces.includes(ns))));
-  const eventNamespacesPending = activeNav === 'events' && requestedEventNamespaces !== null &&
-    (requestedEventNamespaces.length !== selectedNamespaces.length ||
-      requestedEventNamespaces.some((ns, index) => ns !== selectedNamespaces[index]));
-  const routeBlocked = routeForbidden || eventNamespacesPending || activeNav === 'not-found' || !activeNav || Boolean(matchPath(LOGIN_ROUTE, location.pathname));
-  const effectiveEventSearch = activeNav === 'events' && eventParams.has('q') ? eventParams.get('q') : eventSearch;
 
+  // Events URL filters take precedence over the current workspace selection.
+  const eventParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedEventNamespaces = useMemo(() => eventNamespacesFromSearch(eventParams), [eventParams]);
+  const isEventsRoute = activeNav === 'events';
+  const isLoginRoute = Boolean(matchPath(LOGIN_ROUTE, location.pathname));
+  const hasUnauthorizedNamespace = requestedEventNamespaces !== null &&
+    requestedEventNamespaces.some((namespace) => !namespaces.includes(namespace));
+  const routeForbidden = isEventsRoute && (!canAccessNav('events') || hasUnauthorizedNamespace);
+  const eventNamespacesPending = isEventsRoute && requestedEventNamespaces !== null &&
+    !namespaceSelectionMatches(requestedEventNamespaces, selectedNamespaces);
+  const routeBlocked = routeForbidden || eventNamespacesPending || activeNav === 'not-found' || !activeNav || isLoginRoute;
+  const effectiveEventSearch = isEventsRoute && eventParams.has('q') ? eventParams.get('q') : eventSearch;
+
+  // Apply authorized URL namespaces before fetching Events for the new selection.
   useEffect(() => {
     if (isLoggedIn && activeNav === 'events' && !routeForbidden && eventNamespacesPending) {
       setSelectedNamespaces(requestedEventNamespaces);
@@ -656,7 +658,7 @@ export default function App() {
     if (!nextNav) return;
     expandNavSectionForNav(nextNav);
     if (nextNav === 'dashboard' || nextNav === 'events') {
-      const path = `/${nextNav}`;
+      const path = nextNav === 'dashboard' ? DASHBOARD_ROUTE : EVENTS_ROUTE;
       if (location.pathname !== path) navigate(path);
     } else {
       setWorkspaceNav(nextNav);
@@ -771,6 +773,7 @@ export default function App() {
   }, [activeNav]);
 
   useEffect(() => {
+    // Invalidate in-flight Events responses when navigation, authorization, or namespace changes.
     eventRequestRef.current += 1;
     if (activeNav === 'events') setEvents([]);
     return () => { eventRequestRef.current += 1; };
