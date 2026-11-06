@@ -2,7 +2,7 @@
 
 ## 2026-11-06 — Incremental routing without changing authentication
 
-Use React Router with routed JSX pages in `ui/src/pages`, shared routes in `ui/src/shared/routes` and an escaped runtime base path. Dashboard is the default, Events is the pilot, and other screens use the reserved `/_workspace` route until migrated. TypeScript, FSD and Steiger remain deferred.
+Use React Router with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. `BASE_PATH` is the sole prefix for SPA navigation and external authentication; proxy-provided scheme and host remain supported. Dashboard is the default, Events is the pilot, and other screens use the reserved `/_workspace` route until migrated. TypeScript, FSD and Steiger remain deferred.
 
 Preserve existing login, Bearer transport, logout and token invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, while a 401 clears client state without another remote logout. Return navigation requires a fresh sign-in and uses prefix-scoped tab-local metadata for external providers, falling back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; session cookies and silent authentication restoration are not introduced.
 

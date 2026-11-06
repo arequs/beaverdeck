@@ -19,8 +19,8 @@ func TestSPAEntryRuntimeBase(t *testing.T) {
 	for _, tc := range []struct{ name, configured, forwarded, want string }{
 		{"root", "", "", `/`},
 		{"configured", "/beaverdeck", "/ignored", `/beaverdeck/`},
-		{"forwarded", "", "/proxy", `/proxy/`},
-		{"escaped", "", `/x"<y`, `/x&#34;&lt;y/`},
+		{"forwarded ignored", "", "/proxy", `/`},
+		{"escaped", `/x"<y`, "", `/x&#34;&lt;y/`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &Server{cfg: config.Config{BasePath: tc.configured}, fs: http.Dir(dir)}

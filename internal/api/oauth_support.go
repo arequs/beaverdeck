@@ -565,21 +565,21 @@ func requestBearerToken(r *http.Request) string {
 	return strings.TrimSpace(r.URL.Query().Get("token"))
 }
 
-func googleRedirectURI(r *http.Request) string {
-	return requestBaseURL(r) + "/api/auth/google/callback"
+func (s *Server) googleRedirectURI(r *http.Request) string {
+	return s.requestBaseURL(r) + "/api/auth/google/callback"
 }
 
-func oidcRedirectURI(r *http.Request) string {
-	return requestBaseURL(r) + "/api/auth/oidc/callback"
+func (s *Server) oidcRedirectURI(r *http.Request) string {
+	return s.requestBaseURL(r) + "/api/auth/oidc/callback"
 }
 
-func entraRedirectURI(r *http.Request) string {
+func (s *Server) entraRedirectURI(r *http.Request) string {
 	// Keep the historical OIDC callback URI so existing Entra app registrations
 	// continue to work. The callback selects the provider by its isolated state cookie.
-	return oidcRedirectURI(r)
+	return s.oidcRedirectURI(r)
 }
 
-func requestBaseURL(r *http.Request) string {
+func (s *Server) requestBaseURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -591,13 +591,7 @@ func requestBaseURL(r *http.Request) string {
 	if host == "" {
 		host = r.Host
 	}
-	prefix := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Prefix"), ",")[0])
-	if prefix != "" && prefix != "/" {
-		prefix = "/" + strings.Trim(prefix, "/")
-	} else {
-		prefix = ""
-	}
-	return fmt.Sprintf("%s://%s%s", scheme, host, prefix)
+	return fmt.Sprintf("%s://%s%s", scheme, host, s.cfg.BasePath)
 }
 
 func oidcScopes(raw string) string {

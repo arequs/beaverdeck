@@ -169,7 +169,7 @@ func (s *Server) authGoogleStart(w http.ResponseWriter, r *http.Request) {
 
 	params := url.Values{}
 	params.Set("client_id", cfg.ClientID)
-	params.Set("redirect_uri", googleRedirectURI(r))
+	params.Set("redirect_uri", s.googleRedirectURI(r))
 	params.Set("response_type", "code")
 	params.Set("scope", "openid email profile")
 	params.Set("state", state)
@@ -198,7 +198,7 @@ func (s *Server) authGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	accessToken, err := exchangeGoogleCode(ctx, cfg, googleRedirectURI(r), code)
+	accessToken, err := exchangeGoogleCode(ctx, cfg, s.googleRedirectURI(r), code)
 	if err != nil {
 		s.redirectAuthResult(w, r, "", "", err)
 		return
@@ -253,12 +253,12 @@ func (s *Server) authExternalOIDCStart(w http.ResponseWriter, r *http.Request, e
 	cfg, err := s.users.GetOIDCConfig(r.Context())
 	providerName := "OpenID Connect"
 	stateCookie := oidcAuthStateCookie
-	redirectURI := oidcRedirectURI(r)
+	redirectURI := s.oidcRedirectURI(r)
 	if entra {
 		cfg, err = s.users.GetEntraConfig(r.Context())
 		providerName = "Azure Entra ID"
 		stateCookie = entraAuthStateCookie
-		redirectURI = entraRedirectURI(r)
+		redirectURI = s.entraRedirectURI(r)
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
@@ -300,12 +300,12 @@ func (s *Server) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) authExternalOIDCCallback(w http.ResponseWriter, r *http.Request, entra bool) {
 	stateCookie := oidcAuthStateCookie
-	redirectURI := oidcRedirectURI(r)
+	redirectURI := s.oidcRedirectURI(r)
 	providerName := "OpenID Connect"
 	authSource := "oidc"
 	if entra {
 		stateCookie = entraAuthStateCookie
-		redirectURI = entraRedirectURI(r)
+		redirectURI = s.entraRedirectURI(r)
 		providerName = "Azure Entra ID"
 		authSource = "entra"
 	}
@@ -412,11 +412,5 @@ func (s *Server) redirectAuthResult(w http.ResponseWriter, r *http.Request, user
 		values.Set("auth_user", username)
 		values.Set("auth_session", token)
 	}
-	basePath := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Prefix"), ",")[0])
-	if basePath != "" && basePath != "/" {
-		basePath = "/" + strings.Trim(basePath, "/")
-	} else {
-		basePath = ""
-	}
-	http.Redirect(w, r, basePath+"/#"+values.Encode(), http.StatusFound)
+	http.Redirect(w, r, s.cfg.BasePath+"/#"+values.Encode(), http.StatusFound)
 }

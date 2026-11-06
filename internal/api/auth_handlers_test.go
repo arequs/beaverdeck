@@ -225,20 +225,39 @@ func TestOAuthRedirectURIsPreserveProviderCallbacks(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "http://internal/api/auth/oidc/start", nil)
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Forwarded-Host", "example.test")
-	request.Header.Set("X-Forwarded-Prefix", "/beaverdeck")
+	request.Header.Set("X-Forwarded-Prefix", "/ignored")
+	s := &Server{cfg: config.Config{BasePath: "/beaverdeck"}}
 
 	for _, tc := range []struct {
 		name string
 		got  string
 		want string
 	}{
-		{"Google", googleRedirectURI(request), "https://example.test/beaverdeck/api/auth/google/callback"},
-		{"OIDC", oidcRedirectURI(request), "https://example.test/beaverdeck/api/auth/oidc/callback"},
-		{"Entra", entraRedirectURI(request), "https://example.test/beaverdeck/api/auth/oidc/callback"},
+		{"Google", s.googleRedirectURI(request), "https://example.test/beaverdeck/api/auth/google/callback"},
+		{"OIDC", s.oidcRedirectURI(request), "https://example.test/beaverdeck/api/auth/oidc/callback"},
+		{"Entra", s.entraRedirectURI(request), "https://example.test/beaverdeck/api/auth/oidc/callback"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.got != tc.want {
 				t.Fatalf("got %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAuthRedirectUsesConfiguredBasePath(t *testing.T) {
+	for _, basePath := range []string{"", "/beaverdeck"} {
+		t.Run("base="+basePath, func(t *testing.T) {
+			s := &Server{cfg: config.Config{BasePath: basePath}}
+			request := httptest.NewRequest(http.MethodGet, "http://internal/api/auth/oidc/callback", nil)
+			request.Header.Set("X-Forwarded-Prefix", "/ignored")
+			response := httptest.NewRecorder()
+			s.redirectAuthResult(response, request, "admin", "token", nil)
+			if got, want := response.Header().Get("Location"), basePath+"/#auth_session=token&auth_user=admin"; got != want {
+				t.Fatalf("got redirect %q, want %q", got, want)
+			}
+			if got, want := s.oidcRedirectURI(request), "http://internal"+basePath+"/api/auth/oidc/callback"; got != want {
+				t.Fatalf("got callback %q, want %q", got, want)
 			}
 		})
 	}

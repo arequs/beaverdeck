@@ -168,15 +168,7 @@ func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to read application", http.StatusInternalServerError)
 		return
 	}
-	prefix := s.cfg.BasePath
-	if prefix == "" {
-		prefix = strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Prefix"), ",")[0])
-	}
-	prefix = strings.Trim(prefix, "/")
-	if prefix != "" {
-		prefix = "/" + prefix
-	}
-	escaped := html.EscapeString(prefix)
+	escaped := html.EscapeString(s.cfg.BasePath)
 	entry := `<base href="` + escaped + `/"><meta name="beaverdeck-base-path" content="` + escaped + `">`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

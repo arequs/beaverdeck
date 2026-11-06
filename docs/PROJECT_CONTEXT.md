@@ -16,7 +16,7 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 
 ## Architecture
 
-- The Go SPA entry injects an escaped runtime base path, using `BASE_PATH` before the forwarded-prefix fallback. Dashboard and permission-gated Events have routes; other screens use `/_workspace`. Events restores authorized namespace and search URL parameters. Validated destinations return after a fresh sign-in; external return uses prefix-scoped tab-local metadata and falls back to Dashboard if storage is unavailable. Live external-provider verification remains outstanding.
+- The Go SPA entry injects an escaped runtime base path from `BASE_PATH`, also used for external authentication redirects. Dashboard and permission-gated Events have routes; other screens use `/_workspace`. Events restores authorized namespace and search URL parameters. Validated destinations return after a fresh sign-in; external return uses prefix-scoped tab-local metadata and falls back to Dashboard if storage is unavailable. Live external-provider verification remains outstanding.
 
 - `cmd/server/` contains the Go backend entrypoint and embeds the built frontend assets from `cmd/server/web/dist`.
 - `internal/api/` defines HTTP and WebSocket routes for auth, admin configuration, Kubernetes resources, manifests, logs, exec, node/workload/pod actions, and apply operations.
