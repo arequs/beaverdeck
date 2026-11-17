@@ -2,7 +2,7 @@
 
 ## Current Main Release
 
-BeaverDeck `1.6.5` with Helm chart `2.2.11` is prepared on `main`. Runtime version reporting comes from
+BeaverDeck `1.6.5` with Helm chart `2.2.12` is prepared on `main`. Runtime version reporting comes from
 `internal/version.Current`; Helm `appVersion` and `image.tag` are packaging metadata only. Update checks always POST
 that compiled version to `https://beaverdeck.io/update-check` and have no endpoint or version environment override.
 
@@ -52,11 +52,11 @@ Auth/config flow:
 
 ## Tech Stack
 
-- Backend: Go `1.27.3`.
-- Go extension modules include `golang.org/x/net` `0.61.0` and `golang.org/x/text` `0.43.0`.
-- Frontend: React `19.3.0`, Vite `8.3.4`, lucide-react `1.54.0`, xterm.js with fit addon.
-- Kubernetes: `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` `0.37.1`.
-- Storage: SQLite via `modernc.org/sqlite` `1.60.1` for non-auth runtime metadata.
+- Backend: Go `1.27.4`.
+- Go extension modules include `golang.org/x/net` `0.63.0` and `golang.org/x/text` `0.44.0`.
+- Frontend: React `19.3.1`, Vite `8.3.8`, lucide-react `1.74.0`, xterm.js with fit addon.
+- Kubernetes: `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` `0.37.2`.
+- Storage: SQLite via `modernc.org/sqlite` `1.62.0` for non-auth runtime metadata.
 - Auth/OAuth: local users, Google OAuth, generic OpenID Connect, Azure Entra ID through OIDC, `golang.org/x/oauth2`.
 - Config serialization: YAML via `sigs.k8s.io/yaml`.
 - Packaging/deploy: Docker multi-stage build, Helm chart.
@@ -65,7 +65,7 @@ Auth/config flow:
 
 ## Runtime & Environments
 
-- Prepared release baseline: BeaverDeck `1.6.5`, Helm chart `2.2.11`, default image tag `1.6.5`.
+- Prepared release baseline: BeaverDeck `1.6.5`, Helm chart `2.2.12`, default image tag `1.6.5`.
 - Runtime mode is in-cluster only in the application entrypoint; it calls `kube.InCluster()`.
 - HTTP listens on `LISTEN_ADDR`, default `:8080`.
 - `BASE_PATH` supports non-root ingress paths.
@@ -155,14 +155,19 @@ Secret/config notes:
 ## CI/CD
 
 - No CI/CD workflow directory was found in this checkout.
-- `Dockerfile` builds frontend assets with Node 22, builds the Go server with Go 1.27.3, and copies the binary into a distroless nonroot image.
-- Go security baseline is Go `1.27.3` or newer with `golang.org/x/net` `0.61.0` or newer and `golang.org/x/text` `0.43.0` or newer.
+- `Dockerfile` builds frontend assets with Node 22, builds the Go server with Go 1.27.4, and copies the binary into a distroless nonroot image.
+- Go security baseline is Go `1.27.4` or newer with `golang.org/x/net` `0.62.0` or newer; the current graph uses `x/net` `0.63.0` and `x/text` `0.44.0`.
 - `ui/package.json` provides `npm run build` and `npm run dev`.
+- `npm audit --omit=dev` is clean. The full audit currently reports GHSA-fc5q-39xc-vjpf through Vite's build-only
+  `picomatch` dependency; no fixed stable `picomatch` release exists as of 2026-11-17, and the dependency is not
+  copied into the distroless runtime image.
 - Go tests are run with `go test ./...`.
 - Helm rendering can be checked with `helm template beaverdeck charts/beaverdeck`.
 - `deploy.sh` is a local/minikube-oriented helper, not a verified production pipeline.
 - Release 1.6.4 updates the stable Go toolchain to `1.27.2`, Kubernetes Go modules to `0.37.1`, `modernc.org/sqlite` to `1.60.1`, `golang.org/x/net` to `0.61.0`, `golang.org/x/text` to `0.43.0`, React to `19.3.0`, Vite to `8.3.4`, and lucide-react to `1.54.0`.
 - Release 1.6.5 updates the Go toolchain to `1.27.3` for CVE-2026-111943 / GO-2026-6809 in `crypto/x509` without changing dependency modules or product APIs.
+- The current post-1.6.5 maintenance baseline uses Go `1.27.4`, `golang.org/x/net` `0.63.0`, Kubernetes Go
+  `0.37.2`, SQLite `1.62.0`, OAuth2 `0.38.0`, React `19.3.1`, Vite `8.3.8`, and lucide-react `1.74.0`.
 
 ## Conventions
 
@@ -223,3 +228,11 @@ Secret/config notes:
 - Will future commercial code use open-core, a separate proprietary edition/module, dual licensing, or paid support/hosted services around the existing Apache-2.0 core?
 - Which billing provider, customer/account model, activation limits, cancellation/refund rules, and customer portal are required?
 - What stable installation identity and telemetry consent/privacy policy should be used if worker counts and entitlement heartbeats are sent to BeaverDeck-server?
+
+## Auth boundary review — 2026-10-30
+
+- Direct Service/Pod access uses the same backend auth middleware as ingress access; Kubernetes credentials are not accepted as BeaverDeck session tokens. Kubernetes operations use the application's in-cluster ServiceAccount, without per-user impersonation.
+- Before a local admin exists, the public bootstrap completion endpoint accepts the first administrator without a separate installation secret. Restrict initial access until bootstrap completes.
+- Users able to modify the auth configuration Secret and restart the application can replace application auth configuration; users able to execute code under its ServiceAccount can use its broad Kubernetes permissions independently of BeaverDeck login.
+- `apply: edit` authorizes arbitrary Apply YAML, including cluster-scoped kinds, without per-kind permission checks. Namespace checks alone do not confine this permission to namespaced resources. Treat it as a high-trust permission.
+- This was a source review, not a deployed-cluster penetration test. Existing users/API tests passed; the auth package has no standalone tests.

@@ -1,5 +1,36 @@
 # AI Change Log
 
+## 2026-11-17 — Refresh Stable Security And Dependency Baselines
+
+### Summary
+
+Updated the build toolchain from Go `1.27.3` to stable Go `1.27.4` and `golang.org/x/net` from `0.61.0` to `0.63.0`
+for the reported standard-library and network-package vulnerabilities. Refreshed compatible stable Go and frontend
+dependencies within their existing major lines without changing BeaverDeck application behavior or application metadata.
+The application remains `1.6.5`; the Helm chart is advanced to `2.2.12` for this maintenance update.
+
+### Files changed
+
+- `go.mod`, `go.sum`, `Dockerfile`, `README.md`
+- `ui/package.json`, `ui/package-lock.json`
+- `charts/beaverdeck/Chart.yaml`, `docs/changelog/1.6.5.md`
+- `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/CHANGELOG_AI.md`
+
+### Validation
+
+- `go mod verify`, `go test ./...`, and `go vet ./...` passed with the automatically downloaded Go `1.27.4`
+  toolchain.
+- `npm run build` passed with Vite `8.3.8`; `npm outdated` reported no remaining direct updates and
+  `npm audit --omit=dev` reported zero runtime vulnerabilities.
+- The full npm audit still reports GHSA-fc5q-39xc-vjpf in Vite's build-only `picomatch` chain. No fixed stable
+  `picomatch` release is currently available, and this tooling is absent from the shipped distroless image.
+- `helm lint --strict`, a full persistence/Ingress-enabled `helm template` render, and chart packaging passed for
+  chart `2.2.12` / app `1.6.5`.
+- Static Linux amd64 and arm64 binaries built successfully and both report Go `1.27.4`.
+- Current `govulncheck` `1.9.0` source and binary scans for both Linux architectures reported
+  `No vulnerabilities found`.
+- `git diff --check` passed.
+
 ## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
 
 ### Summary
@@ -1804,3 +1835,9 @@ the client only cleared local React state.
 ### Follow-ups
 
 - None.
+
+## 2026-10-30 — Document API authentication trust boundaries
+
+Reviewed HTTP routing, session validation, bootstrap, namespace/resource checks, in-cluster credentials, and chart RBAC. Recorded first-admin bootstrap exposure and the broad scope of Apply YAML in `docs/PROJECT_CONTEXT.md`. No runtime code or deployment configuration changed; no architectural decision made.
+
+Validation: `go test ./internal/auth ./internal/users ./internal/api` passed (auth has no standalone test files). No deployed cluster was accessed.

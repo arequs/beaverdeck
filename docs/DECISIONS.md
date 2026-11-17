@@ -1,5 +1,26 @@
 # Technical Decisions
 
+## 2026-11-17 — Refresh The Stable Security Baseline Without Changing Product APIs
+
+### Context
+
+The Go `1.27.3` standard library is affected by CVE-2026-97054, and `golang.org/x/net` `0.61.0` is affected by
+CVE-2026-78661 and CVE-2026-97045. Fixed stable releases are Go `1.27.4` and `x/net` `0.62.0` or newer.
+
+### Decision
+
+Use stable Go `1.27.4` and `x/net` `0.63.0`, the newest stable `x/net` release available during the update. Refresh
+compatible direct dependencies within their existing major lines: OAuth2 `0.38.0`, Kubernetes Go `0.37.2`, SQLite
+`1.62.0`, React `19.3.1`, Vite `8.3.8`, and lucide-react `1.74.0`. Keep the Kubernetes-selected `kube-openapi`
+revision instead of independently moving it to an incompatible development snapshot. Keep the BeaverDeck application
+at `1.6.5` and publish the dependency refresh as Helm chart `2.2.12` per the explicit release-version decision.
+
+### Consequences
+
+The reported Go and `x/net` vulnerabilities are removed from newly built binaries without changing BeaverDeck's
+methods, API contracts, configuration, or stored-data formats. Full Go, frontend, Helm, cross-build, and
+vulnerability checks remain required before publishing an image.
+
 ## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
 
 ### Context
