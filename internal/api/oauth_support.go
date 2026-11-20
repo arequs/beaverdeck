@@ -591,13 +591,33 @@ func requestBaseURL(r *http.Request) string {
 	if host == "" {
 		host = r.Host
 	}
-	prefix := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Prefix"), ",")[0])
-	if prefix != "" && prefix != "/" {
-		prefix = "/" + strings.Trim(prefix, "/")
-	} else {
-		prefix = ""
-	}
+	prefix := safeForwardedPrefix(r.Header.Get("X-Forwarded-Prefix"))
 	return fmt.Sprintf("%s://%s%s", scheme, host, prefix)
+}
+
+func safeForwardedPrefix(header string) string {
+	prefix := strings.TrimSpace(strings.Split(header, ",")[0])
+	if prefix == "" || prefix == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(prefix, "/") || strings.Contains(prefix, "//") {
+		return ""
+	}
+
+	trimmed := strings.Trim(prefix, "/")
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return ""
+		}
+		for _, char := range segment {
+			if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+				(char >= '0' && char <= '9') || strings.ContainsRune("-._~", char) {
+				continue
+			}
+			return ""
+		}
+	}
+	return "/" + trimmed
 }
 
 func oidcScopes(raw string) string {

@@ -68,9 +68,7 @@ func main() {
 			return
 		}
 		if cfg.BasePath != "" {
-			if r.Header.Get("X-Forwarded-Prefix") == "" {
-				r.Header.Set("X-Forwarded-Prefix", cfg.BasePath)
-			}
+			applyConfiguredBasePath(r, cfg.BasePath)
 			if r.URL.Path == cfg.BasePath {
 				http.Redirect(w, r, cfg.BasePath+"/", http.StatusMovedPermanently)
 				return
@@ -132,6 +130,15 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+}
+
+func applyConfiguredBasePath(r *http.Request, basePath string) {
+	if basePath == "" {
+		return
+	}
+	// The configured application path is authoritative. Do not allow an
+	// inbound forwarded header to redirect authentication results elsewhere.
+	r.Header.Set("X-Forwarded-Prefix", basePath)
 }
 
 func diagnosticNamespace(cfg config.Config) string {

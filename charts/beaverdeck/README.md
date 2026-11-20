@@ -199,7 +199,7 @@ Generate a local user password hash with the BeaverDeck image:
 
 ```bash
 read -rsp 'Password: ' BDPASS
-printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.6.5 hash-password
+printf '%s' "$BDPASS" | docker run --rm -i arequs/beaverdeck:1.7.0 hash-password
 unset BDPASS
 ```
 
@@ -284,7 +284,7 @@ Use a non-root path such as `/beaverdeck` only when the ingress controller forwa
 | `fullnameOverride` | `""` | Full override for generated resource names. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `image.repository` | `arequs/beaverdeck` | Container image repository. |
-| `image.tag` | `1.6.5` | Container image tag. |
+| `image.tag` | `1.7.0` | Container image tag. |
 | `ingress.annotations` | `{}` | Ingress annotations. |
 | `ingress.className` | `""` | Ingress class name. |
 | `ingress.enabled` | `false` | Render a single Ingress resource for BeaverDeck. |

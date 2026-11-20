@@ -2,8 +2,8 @@ apiVersion: v2
 name: beaverdeck
 description: Helm chart for BeaverDeck, a lightweight Kubernetes operations, optimization and triage tool
 type: application
-version: 2.2.12
-appVersion: "1.6.5"
+version: 2.2.13
+appVersion: "1.7.0"
 home: https://beaverdeck.io
 sources:
   - https://github.com/arequs/beaverdeck
@@ -11,12 +11,14 @@ icon: https://raw.githubusercontent.com/arequs/beaverdeck/main/ui/public/logo.pn
 annotations:
   artifacthub.io/images: |
     - name: beaverdeck
-      image: docker.io/arequs/beaverdeck:1.6.5
+      image: docker.io/arequs/beaverdeck:1.7.0
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
+    - kind: added
+      description: "Added direct browser routes for Dashboard and Events, including permission-checked URL filters and return navigation after a fresh sign-in."
     - kind: security
-      description: "Updated the build toolchain to Go 1.27.4 and golang.org/x/net to 0.63.0 for the latest standard-library and network-package security fixes."
+      description: "Hardened authentication redirects against ambiguous forwarded prefixes and prevented credential-bearing return destinations."
     - kind: changed
-      description: "Refreshed compatible stable Go and frontend dependencies without changing BeaverDeck APIs or configuration."
+      description: "Added runtime base-path support for routed SPA navigation while preserving existing local, Google, OIDC, and Entra authentication behavior."

@@ -100,6 +100,43 @@ func TestAuthenticateRejectsRevokedSessionDespiteValidSignatureAndExpiry(t *test
 	}
 }
 
+func TestAuthenticateRequiresSignatureRecordAndCurrentSessionVersion(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.CompleteBootstrap(ctx, "admin", "admin-pass"); err != nil {
+		t.Fatal(err)
+	}
+	token, err := store.CreateSession(ctx, "admin", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Register the altered token too, so rejection exercises the signature check.
+	tampered := token + "x"
+	store.createSession(tampered, time.Now().Add(time.Hour))
+	if _, err := store.Authenticate(ctx, tampered); err != sql.ErrNoRows {
+		t.Fatalf("tampered signature: expected rejection, got %v", err)
+	}
+	store.sessions.Delete(token)
+	if _, err := store.Authenticate(ctx, token); err != sql.ErrNoRows {
+		t.Fatalf("missing record: expected rejection, got %v", err)
+	}
+	store.createSession(token, time.Now().Add(time.Hour))
+	if _, err := store.Authenticate(ctx, token); err != nil {
+		t.Fatalf("restored record: expected authentication, got %v", err)
+	}
+	if err := store.ResetLocalPassword(ctx, "admin", "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Authenticate(ctx, token); err != sql.ErrNoRows {
+		t.Fatalf("old session version: expected rejection, got %v", err)
+	}
+}
+
 func TestSweepSessionsRemovesRevokedAndExpiredButKeepsLive(t *testing.T) {
 	store := &Store{}
 	now := time.Now()
