@@ -6,21 +6,15 @@ function normalizeBasePath(path) {
 export function appBasePath() {
   if (typeof window === 'undefined') return '';
 
+  const runtimeBase = document.querySelector('meta[name="beaverdeck-base-path"]');
+  if (runtimeBase) return normalizeBasePath(runtimeBase.content);
+
   const viteBase = import.meta.env.BASE_URL;
   if (viteBase && viteBase !== '/' && viteBase !== './') {
     return normalizeBasePath(viteBase);
   }
 
-  const pathname = window.location.pathname || '/';
-  if (pathname === '/') return '';
-  if (pathname.endsWith('/')) return normalizeBasePath(pathname);
-
-  const segments = pathname.split('/');
-  const last = segments[segments.length - 1] || '';
-  if (last.includes('.')) {
-    return normalizeBasePath(segments.slice(0, -1).join('/'));
-  }
-  return normalizeBasePath(pathname);
+  return '';
 }
 
 export function withBasePath(path) {

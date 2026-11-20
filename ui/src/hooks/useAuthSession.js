@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { AUTH_EXPIRED_EVENT, createApi, publicApi } from '../lib/api.js';
 import { NAMESPACE_STORAGE_KEY } from '../lib/appConstants.js';
 import { defaultRolePermissions, getStoredThemePreference, normalizeRolePermissions } from '../lib/appUtils.js';
-import { withBasePath } from '../lib/paths.js';
+import { appBasePath, withBasePath } from '../lib/paths.js';
+import { currentDestination, loginDestination, readOAuthDestination, saveOAuthDestination } from '../lib/returnTo.js';
+import { useNavigate } from 'react-router';
+import { AUTH_API_ROUTES, LOGIN_ROUTE } from '../shared/routes/index.js';
 
 const DEFAULT_AUTH_PROVIDERS = {
   appVersion: '',
@@ -78,6 +81,19 @@ export default function useAuthSession({
   beforeLogout,
   afterLogout
 }) {
+  const navigate = useNavigate();
+
+  function navigateToDestination(destination) {
+    const base = appBasePath();
+    const relative = destination ? destination.slice(base.length) : '';
+    navigate(!relative || relative === '/' ? '/dashboard' : relative, { replace: true });
+  }
+
+  function navigateToLogin(destination) {
+    const query = destination ? `?${new URLSearchParams({ returnTo: destination })}` : '';
+    navigate(`${LOGIN_ROUTE}${query}`, { replace: true });
+  }
+
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [token, setToken] = useState('');
@@ -93,7 +109,7 @@ export default function useAuthSession({
 
   async function loadAuthProviders() {
     try {
-      const data = await publicApi('/api/auth/providers');
+      const data = await publicApi(AUTH_API_ROUTES.providers);
       setAuthProviders({
         appVersion: data.appVersion || '',
         local: data.local !== false,
@@ -119,7 +135,7 @@ export default function useAuthSession({
 
   async function loadBootstrapStatus() {
     try {
-      const data = await publicApi('/api/auth/bootstrap/status');
+      const data = await publicApi(AUTH_API_ROUTES.bootstrapStatus);
       setBootstrapState({ initialized: Boolean(data.initialized) });
       return Boolean(data.initialized);
     } catch {
@@ -172,7 +188,7 @@ export default function useAuthSession({
       if (!usernameInput.trim() || !passwordInput.trim()) {
         throw new Error('username and password are required');
       }
-      const data = await publicApi('/api/auth/login', {
+      const data = await publicApi(AUTH_API_ROUTES.login, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -182,13 +198,14 @@ export default function useAuthSession({
       });
       await initializeSession(data.username, data.token);
       setPasswordInput('');
+      navigateToDestination(loginDestination());
     } catch (err) {
       setAuthError(err.message || String(err));
     }
   }
 
   async function completeBootstrap(adminUsername, password) {
-    await publicApi('/api/auth/bootstrap/complete', {
+    await publicApi(AUTH_API_ROUTES.bootstrapComplete, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -204,20 +221,24 @@ export default function useAuthSession({
   }
 
   function startGoogleLogin() {
-    window.location.href = withBasePath('/api/auth/google/start');
+    saveOAuthDestination(loginDestination());
+    window.location.href = withBasePath(AUTH_API_ROUTES.googleStart);
   }
 
   function startOIDCLogin() {
-    window.location.href = withBasePath('/api/auth/oidc/start');
+    saveOAuthDestination(loginDestination());
+    window.location.href = withBasePath(AUTH_API_ROUTES.oidcStart);
   }
 
   function startEntraLogin() {
-    window.location.href = withBasePath('/api/auth/entra/start');
+    saveOAuthDestination(loginDestination());
+    window.location.href = withBasePath(AUTH_API_ROUTES.entraStart);
   }
 
   async function logout(options = {}) {
     const { revokeRemote = true, reason = '' } = options;
     const activeToken = token;
+    const destination = currentDestination();
 
     if (beforeLogout) {
       await beforeLogout();
@@ -225,7 +246,7 @@ export default function useAuthSession({
 
     if (revokeRemote && activeToken) {
       try {
-        await publicApi('/api/auth/logout', {
+        await publicApi(AUTH_API_ROUTES.logout, {
           method: 'POST',
           headers: { Authorization: `Bearer ${activeToken}` }
         });
@@ -234,6 +255,7 @@ export default function useAuthSession({
       }
     }
 
+    navigateToLogin(destination);
     setIsLoggedIn(false);
     setToken('');
     setUsername('');
@@ -265,6 +287,7 @@ export default function useAuthSession({
         await loadAuthProviders();
         const initialized = await loadBootstrapStatus();
         if (!initialized) {
+          if (window.location.pathname !== withBasePath(LOGIN_ROUTE)) navigateToLogin(currentDestination());
           return;
         }
         const authCallback = consumeAuthCallback();
@@ -272,16 +295,21 @@ export default function useAuthSession({
           if (!cancelled) {
             setAuthError(authCallback.error);
           }
+          navigateToLogin(readOAuthDestination() || loginDestination());
           clearStoredAuth();
           clearStoredNamespaces();
           return;
         }
         if (authCallback?.username && authCallback?.token) {
           await initializeSession(authCallback.username, authCallback.token);
+          navigateToDestination(readOAuthDestination(true));
           return;
         }
+        const destination = currentDestination();
+        if (window.location.pathname !== withBasePath(LOGIN_ROUTE)) navigateToLogin(destination);
         clearStoredAuth();
       } catch {
+        navigateToLogin(readOAuthDestination() || currentDestination());
         clearStoredAuth();
         clearStoredNamespaces();
         if (!cancelled) {
@@ -310,7 +338,7 @@ export default function useAuthSession({
         return;
       }
 
-      fetch(withBasePath('/api/auth/logout'), {
+      fetch(withBasePath(AUTH_API_ROUTES.logout), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         // Indicates that the browser will keep the associated request alive if the page is unloaded before the request is complete

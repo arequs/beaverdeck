@@ -1,5 +1,37 @@
 # AI Change Log
 
+## 2026-11-21 — Prepare BeaverDeck 1.7.0 And Helm Chart 2.2.13
+
+Prepared the routed-navigation feature as BeaverDeck `1.7.0` with Helm chart `2.2.13` and default image tag `1.7.0`.
+Synchronized the compiled version, OpenAPI, frontend package, chart metadata, image examples, Artifact Hub changes,
+release notes, and project memory. The release retains the stable Go `1.27.4` and patched dependency baseline.
+
+Validation passed with full Go tests and vet, race-enabled server/API/session tests, `go mod verify`, source plus
+Linux amd64/arm64 binary vulnerability scans, all 12 frontend tests, the production frontend build, full current
+`npm audit`, strict Helm lint, a persistence/Ingress-enabled render, chart packaging, both static Linux builds, and
+`git diff --check`.
+
+## 2026-11-21 — Harden Forwarded Prefixes And SPA Fallback
+
+Made configured `BASE_PATH` authoritative over inbound forwarded prefixes, added strict canonical validation when a
+forwarded prefix is used without configuration, limited SPA fallback to GET/HEAD, and rejected return destinations
+with common credential query keys. Added regression coverage for the demonstrated backslash redirect, ambiguous and
+encoded prefixes, unknown POST routes, ordinary return filters, and credential-bearing query parameters.
+
+Validation passed with the full Go test and vet suites, race-enabled server/API/session tests, `go mod verify`,
+`govulncheck ./...`, all 12 frontend unit tests, the Vite production build, current full `npm audit`, strict Helm
+lint, persistence/Ingress-enabled Helm rendering, and `git diff --check`.
+
+## 2026-11-21 — Rebase And Harden Initial Routing
+
+Rebased `feature/add-routing` onto the stable Go `1.27.4`, `x/net` `0.63.0`, React `19.3.1`, Vite `8.3.8`,
+lucide-react `1.74.0`, Kubernetes `0.37.2`, SQLite `1.62.0`, and Helm chart `2.2.12` baseline. Preserved React Router
+`7.18.5`, redirected authenticated `/login` visits to Dashboard, and exposed routing unit tests through `npm test`.
+
+Validation passed with `go mod verify`, `go test ./...`, `go vet ./...`, `govulncheck ./...`, all 11 frontend unit
+tests, the Vite production build, full `npm audit`, strict Helm lint, persistence/Ingress-enabled Helm rendering, and
+`git diff --check`.
+
 ## 2026-11-17 — Refresh Stable Security And Dependency Baselines
 
 ### Summary
@@ -30,6 +62,12 @@ The application remains `1.6.5`; the Helm chart is advanced to `2.2.12` for this
 - Current `govulncheck` `1.9.0` source and binary scans for both Linux architectures reported
   `No vulnerabilities found`.
 - `git diff --check` passed.
+
+## 2026-11-06 — Add initial routing and return navigation
+
+Added routes for login, Dashboard, Events and `/_workspace`, permission-checked Events filters, return navigation after sign-in and Dashboard links on route error pages. Routed navigation uses a shared mapping. Existing authentication and logout behavior remains unchanged.
+
+Go tests, vet, frontend build and routing tests passed. Browser and API checks covered root and prefixed deployments, authentication loss and return, permissions, navigation and API/SSE/Exec transport; the user verified the application in minikube. Live Google, OIDC and Entra providers were unavailable, so their handoffs were simulated. Pagehide revocation remains best-effort.
 
 ## 2026-10-22 — Prepare BeaverDeck 1.6.5 Go Standard-Library Security Release
 
@@ -1813,8 +1851,6 @@ OIDC (including Entra ID) providers.
 - `internal/users/session_lifecycle_test.go`
 - `cmd/server/main.go` (starts the session sweeper)
 - `ui/src/hooks/useAuthSession.js` (`pagehide` handler)
-- `openspec/specs/auth/session-lifecycle/spec.md` and the archived change under
-  `openspec/changes/archive/2026-09-11-tab-scoped-session-expiry/`
 - project memory files (`docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`)
 
 ### Reason
@@ -1835,9 +1871,3 @@ the client only cleared local React state.
 ### Follow-ups
 
 - None.
-
-## 2026-10-30 — Document API authentication trust boundaries
-
-Reviewed HTTP routing, session validation, bootstrap, namespace/resource checks, in-cluster credentials, and chart RBAC. Recorded first-admin bootstrap exposure and the broad scope of Apply YAML in `docs/PROJECT_CONTEXT.md`. No runtime code or deployment configuration changed; no architectural decision made.
-
-Validation: `go test ./internal/auth ./internal/users ./internal/api` passed (auth has no standalone test files). No deployed cluster was accessed.

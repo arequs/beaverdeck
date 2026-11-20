@@ -2,7 +2,7 @@
 
 ## Current Main Release
 
-BeaverDeck `1.6.5` with Helm chart `2.2.12` is prepared on `main`. Runtime version reporting comes from
+BeaverDeck `1.7.0` with Helm chart `2.2.13` is prepared on `main`. Runtime version reporting comes from
 `internal/version.Current`; Helm `appVersion` and `image.tag` are packaging metadata only. Update checks always POST
 that compiled version to `https://beaverdeck.io/update-check` and have no endpoint or version environment override.
 
@@ -16,6 +16,8 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 
 ## Architecture
 
+- The Go SPA entry injects an escaped runtime base path from `BASE_PATH`, which is authoritative for authentication redirects when configured. Without it, `X-Forwarded-Prefix` is accepted only as a canonical path made of safe ASCII segments. SPA fallback is limited to GET/HEAD navigation requests. Dashboard and permission-gated Events have routes; other screens use `/_workspace`. Events restores authorized namespace and search URL parameters. Validated destinations return after a fresh sign-in, but destinations with common credential query keys are rejected; external return uses prefix-scoped tab-local metadata and falls back to Dashboard if storage is unavailable. An already-authenticated visit to `/login` is replaced with `/dashboard`. Live external-provider verification remains outstanding.
+
 - `cmd/server/` contains the Go backend entrypoint and embeds the built frontend assets from `cmd/server/web/dist`.
 - `internal/api/` defines HTTP and WebSocket routes for auth, admin configuration, Kubernetes resources, manifests, logs, exec, node/workload/pod actions, and apply operations.
 - `internal/auth/` contains auth middleware for protected API routes.
@@ -25,6 +27,7 @@ Planned commercial direction, not yet implemented: keep a free tier for clusters
 - `internal/updatecheck/` handles update-check metadata.
 - `internal/version/` is the single runtime source of the BeaverDeck application version.
 - `ui/src/` contains the React application.
+- Shared frontend route definitions live under `ui/src/shared/routes/`, grouped by purpose and exported through its index; the login route and auth API family are shared with return-destination validation.
 - `charts/beaverdeck/` contains the Helm chart.
 - Insights are split into Nodes, Workloads, GPU, Networking, Storage, Security, and Configuration sections. There is no separate Capacity Insights section; pod resource checks live under Workloads and node resource checks live under Nodes.
 - Dashboard is the standalone first navigation item and the default post-login page. It has no dedicated permission; it conditionally loads and progressively renders health, capacity, readiness, event, inventory, pod-consumer, and Insights summaries from only the resources and selected namespaces the current role may view. Dashboard Insights categories require both `insights: view` and View access to every source-resource family used by that category. Allowed categories are passed as one comma-separated request and evaluated in one `BuildInsights` traversal so shared Kubernetes resources are not rescanned per category; storage checks reuse Nodes already loaded by node/GPU checks. Dashboard events use a server-side Kubernetes `type=Warning` field selector and retain at most 30 recent warnings per namespace. Dashboard PVC/PV inventory calls set `include_metrics=0` to avoid duplicate node `stats/summary` scans, while the dedicated PVC/PV pages retain metrics by default.
@@ -54,7 +57,7 @@ Auth/config flow:
 
 - Backend: Go `1.27.4`.
 - Go extension modules include `golang.org/x/net` `0.63.0` and `golang.org/x/text` `0.44.0`.
-- Frontend: React `19.3.1`, Vite `8.3.8`, lucide-react `1.74.0`, xterm.js with fit addon.
+- Frontend: React `19.3.1`, React Router `7.18.5`, Vite `8.3.8`, lucide-react `1.74.0`, xterm.js with fit addon.
 - Kubernetes: `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` `0.37.2`.
 - Storage: SQLite via `modernc.org/sqlite` `1.62.0` for non-auth runtime metadata.
 - Auth/OAuth: local users, Google OAuth, generic OpenID Connect, Azure Entra ID through OIDC, `golang.org/x/oauth2`.
@@ -65,7 +68,7 @@ Auth/config flow:
 
 ## Runtime & Environments
 
-- Prepared release baseline: BeaverDeck `1.6.5`, Helm chart `2.2.12`, default image tag `1.6.5`.
+- Prepared release baseline: BeaverDeck `1.7.0`, Helm chart `2.2.13`, default image tag `1.7.0`.
 - Runtime mode is in-cluster only in the application entrypoint; it calls `kube.InCluster()`.
 - HTTP listens on `LISTEN_ADDR`, default `:8080`.
 - `BASE_PATH` supports non-root ingress paths.
@@ -138,7 +141,7 @@ Secret/config notes:
 - Editing an existing manifest requires `edit` for that resource. The separate `apply: edit` permission grants access to arbitrary Apply YAML and is not required for editing an existing object.
 - Runtime user, role, Google, generic OIDC, Entra, bootstrap, password, and bulk-import changes are serialized with Secret persistence. Generic OIDC and Azure Entra ID have independent configuration and group mappings in the `oidc` and `entra` snapshot sections and may be enabled simultaneously. Readers do not observe an uncommitted change, and a failed Secret save restores both configuration and exact local session versions.
 - Session tokens identify the user and role, while the backend resolves the current role permissions on every authenticated request; role permission updates therefore apply to existing backend sessions.
-- `Store` additionally keeps an in-memory `sessions sync.Map` (token string -> `sessionRecord{expiresAt, revoked atomic.Bool}`), independent of `sessionVersions`. `Authenticate()` rejects a token if its session record is missing or `revoked`, on top of the existing signature/`exp`/`session_version` checks. The session key is the token itself (no separate `sid`); a `StartSessionSweeper` background goroutine (interval `sessionSweepInterval` = 1 hour) deletes revoked/expired records so the map does not grow unbounded. `POST /api/auth/logout` (`logoutTokenFromRequest` reads the `Authorization: Bearer` header only, since `/api/auth/*` bypasses `auth.Middleware`) genuinely revokes the presented session instead of being a no-op; an already-invalid token is a quiet success. The frontend still keeps the token only in React state (not `sessionStorage`) and additionally fires a best-effort `fetch('/api/auth/logout', { keepalive: true })` on the `pagehide` event, so logout/`F5`/tab-close now all revoke the token server-side, not just in UI state. Same logic for every `authSource`: local, Google OAuth, OIDC (including Entra ID); no sliding idle timeout — the only expiry check is still the absolute `sessionTokenTTL` (12h), now with revocation as a second rejection reason. See `openspec/specs/auth/session-lifecycle/spec.md`.
+- `Store` additionally keeps an in-memory `sessions sync.Map` (token string -> `sessionRecord{expiresAt, revoked atomic.Bool}`), independent of `sessionVersions`. `Authenticate()` rejects a token if its session record is missing or `revoked`, on top of the existing signature/`exp`/`session_version` checks. The session key is the token itself (no separate `sid`); a `StartSessionSweeper` background goroutine (interval `sessionSweepInterval` = 1 hour) deletes revoked/expired records so the map does not grow unbounded. `POST /api/auth/logout` (`logoutTokenFromRequest` reads the `Authorization: Bearer` header only, since `/api/auth/*` bypasses `auth.Middleware`) genuinely revokes the presented session instead of being a no-op; an already-invalid token is a quiet success. The frontend still keeps the token only in React state (not `sessionStorage`) and additionally fires a best-effort `fetch('/api/auth/logout', { keepalive: true })` on the `pagehide` event. Delivered logout requests revoke the token server-side; unload delivery is not guaranteed. Same logic for every `authSource`: local, Google OAuth, OIDC (including Entra ID); no sliding idle timeout — the only expiry check is still the absolute `sessionTokenTTL` (12h), now with revocation as a second rejection reason.
 - `secrets: view` lists Secret metadata only. Secret manifests contain normal Kubernetes base64 `data` values, so opening a manifest, revealing decoded data, and editing all require `secrets: edit`; deletion requires `secrets: full`.
 - User and role administration is restricted to `mode: admin`; non-admin resource permissions do not delegate those APIs.
 - Suppressed Insight ConfigMap value is a JSON array, default `[]`.
@@ -157,10 +160,8 @@ Secret/config notes:
 - No CI/CD workflow directory was found in this checkout.
 - `Dockerfile` builds frontend assets with Node 22, builds the Go server with Go 1.27.4, and copies the binary into a distroless nonroot image.
 - Go security baseline is Go `1.27.4` or newer with `golang.org/x/net` `0.62.0` or newer; the current graph uses `x/net` `0.63.0` and `x/text` `0.44.0`.
-- `ui/package.json` provides `npm run build` and `npm run dev`.
-- `npm audit --omit=dev` is clean. The full audit currently reports GHSA-fc5q-39xc-vjpf through Vite's build-only
-  `picomatch` dependency; no fixed stable `picomatch` release exists as of 2026-11-17, and the dependency is not
-  copied into the distroless runtime image.
+- `ui/package.json` provides `npm run build`, `npm run dev`, and `npm test` for the routing utility tests.
+- The current full `npm audit` is clean.
 - Go tests are run with `go test ./...`.
 - Helm rendering can be checked with `helm template beaverdeck charts/beaverdeck`.
 - `deploy.sh` is a local/minikube-oriented helper, not a verified production pipeline.
@@ -168,6 +169,8 @@ Secret/config notes:
 - Release 1.6.5 updates the Go toolchain to `1.27.3` for CVE-2026-111943 / GO-2026-6809 in `crypto/x509` without changing dependency modules or product APIs.
 - The current post-1.6.5 maintenance baseline uses Go `1.27.4`, `golang.org/x/net` `0.63.0`, Kubernetes Go
   `0.37.2`, SQLite `1.62.0`, OAuth2 `0.38.0`, React `19.3.1`, Vite `8.3.8`, and lucide-react `1.74.0`.
+- Release 1.7.0 adds the initial direct routes and hardened return navigation on that dependency baseline without
+  changing Helm values, stored configuration, authentication providers, or backend authorization rules.
 
 ## Conventions
 
@@ -201,13 +204,13 @@ Secret/config notes:
   point to remain eligible for T-10s and nearby snapshot data.
 - Helm RBAC is cluster-scoped because the UI/API inspect and operate on cluster-wide resources such as nodes, PVs, storage classes, CRDs, namespaces, metrics, and node proxy stats.
 - `openapi.yaml` remains incomplete: it documents only 11 paths compared with 79 registered routes.
-- The measured Go statement coverage baseline is `39.1%`; auth middleware and most HTTP handlers, including mutation routes, have no direct coverage. The frontend has no lint or test command.
+- The measured Go statement coverage baseline is `39.1%`; auth middleware and most HTTP handlers, including mutation routes, have no direct coverage. The frontend has routing utility tests but no lint command or component/browser test runner.
 - Auth config import failure at startup is fatal by design; the existing Secret must be fixed or deleted for fresh initialization.
 - Login sessions are in-memory only; users must sign in again after a pod restart, or after logout/tab-close/`F5`, or after the fixed 12h `sessionTokenTTL` elapses (no sliding idle timeout).
 - `DATA_DIR` persistence preserves non-auth runtime metadata only, not auth configuration.
 - There is currently no license, subscription, entitlement, billing, activation, worker-node limit, or paid-feature gate in BeaverDeck.
 - The current Node list path derives display roles from `node-role.kubernetes.io/*` labels, but it also loads all pods and metrics. It is not suitable as a periodic licensing counter without a separate lightweight Node-only path and explicit worker classification.
-- BeaverDeck `1.6.5` sends only the compiled `appVersion` to the update-check endpoint. The neighboring BeaverDeck-server
+- BeaverDeck `1.7.0` sends only the compiled `appVersion` to the update-check endpoint. The neighboring BeaverDeck-server
   accepts this legacy request, records a legacy installation identity derived from the source address plus a hash,
   and also supports newer requests with an explicit `installationId`.
 - BeaverDeck-server stores installation heartbeats in one local JSON file and uses an optional static bearer token only for its summary endpoint. It has no durable multi-instance database, tenant isolation, billing integration, signed entitlements, activation lifecycle, rate limiting, or key management.

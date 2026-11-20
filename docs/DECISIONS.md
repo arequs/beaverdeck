@@ -1,5 +1,45 @@
 # Technical Decisions
 
+## 2026-11-21 — Release Initial Routing As BeaverDeck 1.7.0
+
+### Decision
+
+Release the complete routed-navigation work as BeaverDeck `1.7.0` with Helm chart `2.2.13` and default image tag
+`1.7.0`. Keep the security-maintained Go `1.27.4`, Go module, and frontend dependency baseline from `main`.
+
+### Consequences
+
+The compiled application version, OpenAPI metadata, frontend package, chart metadata, image defaults, examples,
+Artifact Hub changes, and release documentation advance together. No database migration, new Helm value, or
+authentication-provider reconfiguration is required.
+
+## 2026-11-21 — Canonicalize Authentication Prefixes And Navigation Metadata
+
+### Decision
+
+Treat configured `BASE_PATH` as authoritative for authentication callbacks and redirects. When it is absent, accept
+`X-Forwarded-Prefix` only if every path segment uses safe ASCII URL characters and the path contains no ambiguity,
+traversal, query, fragment, encoding, backslash, or authority-like form. Restrict SPA fallback to GET/HEAD and reject
+return destinations containing common credential query keys.
+
+### Consequences
+
+An inbound forwarded prefix cannot turn the token-bearing OAuth result redirect into a cross-origin URL. Unknown
+mutation requests receive 405 instead of application HTML. Normal Events filters and other non-sensitive return
+queries remain supported, while credential-bearing destinations fall back to Dashboard after authentication.
+
+## 2026-11-21 — Keep Login An Unauthenticated Entry Route
+
+### Decision
+
+When an authenticated session reaches `/login`, replace that history entry with `/dashboard`. Keep the redirect in
+the shared routing layer and cover it through the standard frontend test command.
+
+### Consequences
+
+Authenticated users no longer render a blocked dashboard shell at the login URL or leave refresh/data loading
+disabled there. Fresh sign-in return destinations and unauthenticated login behavior remain unchanged.
+
 ## 2026-11-17 — Refresh The Stable Security Baseline Without Changing Product APIs
 
 ### Context
@@ -20,6 +60,14 @@ at `1.6.5` and publish the dependency refresh as Helm chart `2.2.12` per the exp
 The reported Go and `x/net` vulnerabilities are removed from newly built binaries without changing BeaverDeck's
 methods, API contracts, configuration, or stored-data formats. Full Go, frontend, Helm, cross-build, and
 vulnerability checks remain required before publishing an image.
+
+## 2026-11-06 — Incremental routing without changing authentication
+
+Use React Router with routed JSX pages in `ui/src/pages` and shared routes in `ui/src/shared/routes`. The SPA uses `BASE_PATH`; external authentication retains the existing forwarded-prefix behavior. Dashboard is the default, Events is the pilot, and other screens use the reserved `/_workspace` route until migrated. TypeScript, FSD and Steiger remain deferred.
+
+Preserve existing login, Bearer transport, logout and token invalidation behavior throughout migration. F5 loses React-memory credentials; pagehide revocation is best-effort, while a 401 clears client state without another remote logout. Return navigation requires a fresh sign-in and uses prefix-scoped tab-local metadata for external providers, falling back to Dashboard if storage is unavailable. Existing OAuth state cookies remain; session cookies and silent authentication restoration are not introduced.
+
+Validate return paths once against the application prefix, forbidden characters, traversal and auth routes. Query parameter names are not filtered, so credentials must not be placed in URLs. Every later stage must rerun the existing logout and invalidation regression matrix, including expiry, restart, 401, user/role/password/config changes and API/SSE/Exec transport.
 
 ## 2026-10-22 — Move The Standard-Library Security Baseline To Go 1.27.3
 
@@ -737,9 +785,7 @@ in React state only (no `sessionStorage`) and additionally sends a best-effort
 so logout, `F5`, and tab close all revoke the token the same way. A background `StartSessionSweeper` goroutine
 (hourly, modeled on the `restart_diagnostics.go` sampling loop) deletes revoked/expired records so the map stays
 bounded. Same mechanism for every `authSource`: local, Google OAuth, OIDC (including Entra ID).
-Deliberately not introduced: a sliding idle timeout, and federated/global logout at the external provider — see
-`openspec/specs/auth/session-lifecycle/spec.md` and the archived change's `design.md` for the full rationale,
-including the accepted same-wall-clock-second token-collision limitation from keying sessions by the token itself.
+Deliberately not introduced: a sliding idle timeout and federated/global logout at the external provider. Keying sessions by token retains the accepted same-wall-clock-second token-collision limitation.
 
 ### Rationale
 
